@@ -6,3 +6,8 @@ pydantic
 rich
 tqdm
 ipykernel
+langchain-chroma
+chromadb
+langchain-text-splitters
+langchain-huggingface
+sentence-transformers
