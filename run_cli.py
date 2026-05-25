@@ -39,10 +39,18 @@ if __name__ == "__main__":
 
 '''
 
+from pathlib import Path
+import sys
 
-from src.research_agent.graph.workflow import build_graph
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_DIR = PROJECT_ROOT / "src"
+sys.path.insert(0, str(SRC_DIR))
+
+from research_agent.graph.workflow import build_graph
 
 
+
+'''
 def create_initial_state(query: str) -> dict:
     return {
         "query": query,
@@ -51,6 +59,18 @@ def create_initial_state(query: str) -> dict:
         "final_answer": "",
         "classifier_source": "",
         "route_reason": "",
+    }
+'''
+def create_initial_state(query: str) -> dict:
+    return {
+        "query": query,
+        "task_type": "",
+        "result": "",
+        "final_answer": "",
+        "classifier_source": "",
+        "route_reason": "",
+        "retrieved_docs": [],
+        "sources": [],
     }
 
 
