@@ -1,0 +1,4 @@
+run_tag,dataset,mean_extra_object_rate,mean_precision,mean_recall,hrs_v1
+coco_val_n100_g1,COCO2017,0.18,0.82,0.74,0.31
+coco_val_n300_g1,COCO2017,0.23,0.78,0.71,0.39
+sd35_gender_swap,synthetic_sd35,0.15,0.85,0.69,0.28

@@ -11,3 +11,4 @@ chromadb
 langchain-text-splitters
 langchain-huggingface
 sentence-transformers
+pandas
