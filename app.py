@@ -1,0 +1,252 @@
+from pathlib import Path
+import sys
+
+import streamlit as st
+
+
+# =========================
+# Path setup
+# =========================
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_DIR = PROJECT_ROOT / "src"
+
+sys.path.insert(0, str(SRC_DIR))
+
+
+from research_agent.graph.workflow import build_graph
+
+
+# =========================
+# Initial State
+# =========================
+
+def create_initial_state(query: str) -> dict:
+    return {
+        "query": query,
+        "task_type": "",
+        "result": "",
+        "final_answer": "",
+
+        "classifier_source": "",
+        "route_reason": "",
+
+        "retrieved_docs": [],
+        "sources": [],
+
+        "tool_used": "none",
+        "tool_result": {},
+        "tool_result_text": "",
+
+        "evidence_status": "",
+        "evidence_reason": "",
+        "evidence_warnings": [],
+    }
+
+
+# =========================
+# Cache graph
+# =========================
+
+@st.cache_resource
+def get_graph():
+    """
+    Build LangGraph only once.
+
+    This avoids repeatedly compiling the graph every time
+    Streamlit reruns the script.
+    """
+    return build_graph()
+
+
+def run_agent(query: str) -> dict:
+    graph = get_graph()
+    return graph.invoke(create_initial_state(query))
+
+
+# =========================
+# Page config
+# =========================
+
+st.set_page_config(
+    page_title="ResearchAgent v0.3",
+    page_icon="🧠",
+    layout="wide",
+)
+
+
+# =========================
+# Sidebar
+# =========================
+
+st.sidebar.title("ResearchAgent v0.3")
+
+st.sidebar.markdown(
+    """
+**Current Capabilities**
+
+- LangGraph workflow
+- Agentic RAG
+- CSV / JSONL tool calling
+- Evidence Checker
+- Sources display
+"""
+)
+
+st.sidebar.markdown("---")
+
+show_debug = st.sidebar.checkbox("显示 Debug 信息", value=True)
+
+st.sidebar.markdown("### 示例问题")
+
+example_queries = [
+    "请分析 data/experiments/sample_metrics.csv",
+    "请分析 data/experiments/sample_generations.jsonl",
+    "OpenImages-MIAP 的性别标注是图像级还是 bbox 级？",
+    "请帮我解释 coco_val_n300_g1 这个实验的目的",
+    "我今天应该怎么安排科研任务",
+    "ModuleNotFoundError: No module named langgraph 怎么解决",
+]
+
+selected_example = st.sidebar.selectbox(
+    "选择一个示例问题",
+    example_queries,
+)
+
+
+# =========================
+# Main UI
+# =========================
+
+st.title("🧠 ResearchAgent v0.3")
+st.caption("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker")
+
+st.markdown(
+    """
+这是一个面向科研场景的 Agent Demo。  
+它可以根据用户问题进行任务分类，并结合本地 RAG 知识库、CSV/JSONL 工具和证据检查模块生成回答。
+"""
+)
+
+query = st.text_area(
+    "请输入你的科研问题",
+    value=selected_example,
+    height=120,
+)
+
+run_button = st.button("运行 Agent", type="primary")
+
+
+# =========================
+# Run
+# =========================
+
+if run_button:
+    if not query.strip():
+        st.warning("请输入问题。")
+    else:
+        with st.spinner("Agent 正在运行..."):
+            result = run_agent(query.strip())
+
+        st.success("运行完成")
+
+        # -------------------------
+        # Summary cards
+        # -------------------------
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("任务类型", result.get("task_type", "unknown"))
+
+        with col2:
+            st.metric("工具调用", result.get("tool_used", "none"))
+
+        with col3:
+            st.metric("证据状态", result.get("evidence_status", "unknown"))
+
+        with col4:
+            st.metric("Sources 数量", len(result.get("sources", [])))
+
+        st.markdown("---")
+
+        # -------------------------
+        # Final answer
+        # -------------------------
+
+        st.subheader("最终回答")
+        st.markdown(result.get("final_answer", ""))
+
+        # -------------------------
+        # Sources
+        # -------------------------
+
+        st.subheader("Sources")
+
+        sources = result.get("sources", [])
+
+        if not sources:
+            st.info("无 Sources。")
+        else:
+            for i, source in enumerate(sources, start=1):
+                path = source.get("path", "unknown")
+                source_type = source.get("source_type", "unknown")
+                title = source.get("title", "")
+                dataset = source.get("dataset", "")
+                run_tag = source.get("run_tag", "")
+
+                with st.expander(f"{i}. [{source_type}] {path}"):
+                    if title:
+                        st.write("title:", title)
+                    if dataset:
+                        st.write("dataset:", dataset)
+                    if run_tag:
+                        st.write("run_tag:", run_tag)
+
+        # -------------------------
+        # Tool result
+        # -------------------------
+
+        st.subheader("工具分析结果")
+
+        tool_used = result.get("tool_used", "none")
+        tool_result_text = result.get("tool_result_text", "")
+
+        if tool_used == "none":
+            st.info("本次没有调用 CSV / JSONL 工具。")
+        else:
+            st.write(f"工具：`{tool_used}`")
+            st.text(tool_result_text)
+
+        # -------------------------
+        # Evidence
+        # -------------------------
+
+        st.subheader("证据检查")
+
+        st.write("状态：", result.get("evidence_status", "unknown"))
+        st.write("说明：", result.get("evidence_reason", ""))
+
+        warnings = result.get("evidence_warnings", [])
+
+        if warnings:
+            st.warning("\n".join(f"- {w}" for w in warnings))
+        else:
+            st.success("无证据警告。")
+
+        # -------------------------
+        # Debug
+        # -------------------------
+
+        if show_debug:
+            st.markdown("---")
+            st.subheader("Debug State")
+
+            with st.expander("查看完整 AgentState"):
+                st.json(result)
+
+            with st.expander("查看 retrieved_docs"):
+                st.json(result.get("retrieved_docs", []))
+
+            with st.expander("查看 tool_result"):
+                st.json(result.get("tool_result", {}))

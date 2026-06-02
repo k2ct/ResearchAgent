@@ -416,3 +416,16 @@ ResearchAgent v0.1
 
 如果你现在仓库里其实只有 `app.py`，而不是 `run_cli.py + src/` 这套结构，那 README 里有些项目结构需要对应改一下。按照你前面 Day 4 的版本，这份就是比较合适的中文 README。
 ```
+
+## Streamlit Web Demo
+
+Run:
+
+```powershell
+.\.conda\python.exe -m streamlit run app.py
+
+Example queries:
+
+请分析 data/experiments/sample_metrics.csv
+请分析 data/experiments/sample_generations.jsonl
+OpenImages-MIAP 的性别标注是图像级还是 bbox 级？
