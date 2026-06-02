@@ -170,6 +170,9 @@ def load_markdown_documents(directory: Path) -> List[Document]:
     documents = []
 
     for path in sorted(directory.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
+
         doc = load_markdown_document(path)
         documents.append(doc)
 
