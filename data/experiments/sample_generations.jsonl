@@ -1,0 +1,5 @@
+{"image_id": "000001", "run_tag": "coco_val_n100_g1", "dataset": "COCO2017", "prompt": "Describe the image.", "response": "A man riding a bicycle on the street.", "extra_objects": [], "hallucination": false}
+{"image_id": "000002", "run_tag": "coco_val_n100_g1", "dataset": "COCO2017", "prompt": "Describe the image.", "response": "A woman holding an umbrella in a kitchen.", "extra_objects": ["umbrella"], "hallucination": true}
+{"image_id": "000003", "run_tag": "coco_val_n300_g1", "dataset": "COCO2017", "prompt": "Describe the image.", "response": "A dog sitting beside a child in a park.", "extra_objects": [], "hallucination": false}
+{"image_id": "000004", "run_tag": "coco_val_n300_g1", "dataset": "COCO2017", "prompt": "Describe the image.", "response": "A doctor standing in a hospital room with a stethoscope.", "extra_objects": ["stethoscope"], "hallucination": true}
+{"image_id": "000005", "run_tag": "sd35_gender_swap", "dataset": "synthetic_sd35", "prompt": "Describe the image.", "response": "A person working in an office with a laptop.", "extra_objects": ["laptop"], "hallucination": false}
