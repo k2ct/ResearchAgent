@@ -100,13 +100,13 @@ def run_agent(query: str) -> dict:
 
 def print_welcome():
     print("=" * 60)
-    print("ResearchAgent v0.1")
-    print("A minimal LangGraph-based research assistant demo.")
+    print("ResearchAgent v0.3 Agentic Demo")
+    print("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker")
     print("=" * 60)
     print("支持任务类型：")
     print("1. paper_question          论文问答 / 文献总结")
-    print("2. experiment_analysis     实验结果 / 幻觉指标分析")
-    print("3. dataset_recommendation  数据集推荐")
+    print("2. experiment_analysis     实验结果 / CSV/JSONL 文件分析")
+    print("3. dataset_recommendation  数据集推荐 / 数据集说明")
     print("4. report_generation       组会汇报 / PPT 文案")
     print("5. code_help               代码 / 环境 / 报错问题")
     print("6. general                 通用科研助手")
