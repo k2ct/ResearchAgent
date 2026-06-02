@@ -33,3 +33,8 @@ class AgentState(TypedDict):
     tool_used: str
     tool_result: Dict[str, Any]
     tool_result_text: str
+
+    # Day 13 新增：证据检查结果
+    evidence_status: str
+    evidence_reason: str
+    evidence_warnings: List[str]

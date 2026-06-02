@@ -9,6 +9,7 @@ from .nodes import (
     dataset_node,
     code_node,
     general_node,
+    evidence_check_node,
     final_answer_node,
     report_node,
 )
@@ -26,6 +27,7 @@ def build_graph():
     workflow.add_node("code_node", code_node)
     workflow.add_node("general_node", general_node)
     workflow.add_node("report_node", report_node)
+    workflow.add_node("evidence_check", evidence_check_node)
     workflow.add_node("final_answer", final_answer_node)
 
     workflow.add_edge(START, "classify_task")
@@ -43,13 +45,14 @@ def build_graph():
         },
     )
 
-    workflow.add_edge("paper_node", "final_answer")
-    workflow.add_edge("experiment_node", "final_answer")
-    workflow.add_edge("dataset_node", "final_answer")
-    workflow.add_edge("code_node", "final_answer")
-    workflow.add_edge("general_node", "final_answer")
-    workflow.add_edge("report_node", "final_answer")
+    workflow.add_edge("paper_node", "evidence_check")
+    workflow.add_edge("experiment_node", "evidence_check")
+    workflow.add_edge("dataset_node", "evidence_check")
+    workflow.add_edge("report_node", "evidence_check")
+    workflow.add_edge("code_node", "evidence_check")
+    workflow.add_edge("general_node", "evidence_check")
 
+    workflow.add_edge("evidence_check", "final_answer")
     workflow.add_edge("final_answer", END)
 
     return workflow.compile()

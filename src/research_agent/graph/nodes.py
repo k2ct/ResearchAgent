@@ -401,12 +401,101 @@ def format_sources(sources: list) -> str:
     return "\n".join(lines)
 
 
+def evidence_check_node(state: AgentState) -> dict:
+    """
+    Day 13 最小证据检查节点。
+
+    目标：
+    1. 检查是否有 RAG sources
+    2. 检查是否有成功的 tool result
+    3. 对缺少证据的回答给出 warning
+    """
+    sources = state.get("sources", [])
+    retrieved_docs = state.get("retrieved_docs", [])
+
+    tool_used = state.get("tool_used", "none")
+    tool_result = state.get("tool_result", {})
+    tool_ok = bool(tool_result.get("ok")) if isinstance(tool_result, dict) else False
+
+    warnings = []
+
+    has_sources = len(sources) > 0
+    has_retrieved_docs = len(retrieved_docs) > 0
+    has_successful_tool = tool_used != "none" and tool_ok
+
+    if has_sources and has_successful_tool:
+        evidence_status = "passed"
+        evidence_reason = "回答同时包含 RAG 检索来源和成功的工具分析结果。"
+
+    elif has_sources:
+        evidence_status = "passed"
+        evidence_reason = "回答包含 RAG 检索来源，可追踪到本地资料库。"
+
+    elif has_successful_tool:
+        evidence_status = "passed"
+        evidence_reason = "回答包含成功的本地工具分析结果。"
+
+    elif has_retrieved_docs:
+        evidence_status = "weak"
+        evidence_reason = "回答包含检索片段，但未提取到明确 Sources。"
+        warnings.append("检索到文档片段，但 Sources 为空，请检查 metadata path 是否正常。")
+
+    else:
+        evidence_status = "weak"
+        evidence_reason = "当前回答没有 RAG Sources 或工具结果支撑，属于弱证据回答。"
+        warnings.append("未检索到资料来源。")
+        warnings.append("未调用成功的本地分析工具。")
+
+    # 如果工具被调用但失败，额外提示
+    if tool_used != "none" and not tool_ok:
+        warnings.append(f"工具 {tool_used} 被调用，但分析未成功。")
+
+    return {
+        "evidence_status": evidence_status,
+        "evidence_reason": evidence_reason,
+        "evidence_warnings": warnings,
+    }
+
+'''
 def final_answer_node(state: AgentState) -> dict:
     final_answer = f"""
 任务类型：{state["task_type"]}
 分类来源：{state["classifier_source"]}
 分类原因：{state["route_reason"]}
 工具调用：{state.get("tool_used", "none")}
+
+回答：
+{state["result"]}
+
+Sources:
+{format_sources(state.get("sources", []))}
+""".strip()
+
+    return {
+        "final_answer": final_answer
+    }
+'''
+def format_warnings(warnings: list) -> str:
+    if not warnings:
+        return "无"
+
+    return "\n".join(
+        f"- {warning}"
+        for warning in warnings
+    )
+
+
+def final_answer_node(state: AgentState) -> dict:
+    final_answer = f"""
+任务类型：{state["task_type"]}
+分类来源：{state["classifier_source"]}
+分类原因：{state["route_reason"]}
+工具调用：{state.get("tool_used", "none")}
+
+证据检查：{state.get("evidence_status", "unknown")}
+证据说明：{state.get("evidence_reason", "")}
+证据警告：
+{format_warnings(state.get("evidence_warnings", []))}
 
 回答：
 {state["result"]}

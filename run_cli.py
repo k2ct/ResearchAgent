@@ -76,6 +76,11 @@ def create_initial_state(query: str) -> dict:
         "tool_used": "none",
         "tool_result": {},
         "tool_result_text": "",
+
+        # Day 13 新增
+        "evidence_status": "",
+        "evidence_reason": "",
+        "evidence_warnings": [],
     }
 
 
