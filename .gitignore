@@ -26,6 +26,13 @@ env/
 # Logs
 *.log
 logs/
+tmp_cli_*.txt
+tmp_test_agent_demo.txt
+
+# Streamlit config
+.streamlit/*
+!.streamlit/
+!.streamlit/config.toml
 
 # OS
 .DS_Store
@@ -33,3 +40,6 @@ Thumbs.db
 
 # Vector database
 storage/
+
+# Local notebook drafts
+notebooks/day*.ipynb

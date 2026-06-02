@@ -1,0 +1,7 @@
+[server]
+port = 8503
+fileWatcherType = "none"
+runOnSave = false
+
+[browser]
+gatherUsageStats = false
