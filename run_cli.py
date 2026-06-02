@@ -71,6 +71,11 @@ def create_initial_state(query: str) -> dict:
         "route_reason": "",
         "retrieved_docs": [],
         "sources": [],
+
+        # Day 12 新增
+        "tool_used": "none",
+        "tool_result": {},
+        "tool_result_text": "",
     }
 
 

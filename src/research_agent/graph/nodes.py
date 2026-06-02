@@ -9,6 +9,8 @@ from research_agent.rag.retriever import (
     format_retrieved_docs,
 )
 
+from research_agent.tools.tool_router import run_tool_from_query
+
 '''
 def classify_task(state: AgentState) -> dict:
     """
@@ -43,12 +45,37 @@ def classify_task_by_rule(query: str) -> dict:
     if "论文" in query or "paper" in query.lower():
         task_type = "paper_question"
         reason = "命中了论文 / paper 关键词。"
-    elif "实验" in query or "coco" in query.lower() or "幻觉" in query or "benchmark" in query.lower():
+    #elif "实验" in query or "coco" in query.lower() or "幻觉" in query or "benchmark" in query.lower():
+    #    task_type = "experiment_analysis"
+    #    reason = "命中了实验、COCO、幻觉或 benchmark 相关关键词。"
+    elif (
+        "实验" in query
+        or "coco_val" in query.lower()
+        or "run_tag" in query.lower()
+        or "幻觉" in query
+        or "benchmark" in query.lower()
+        or ".csv" in query.lower()
+        or ".jsonl" in query.lower()
+    ):
         task_type = "experiment_analysis"
-        reason = "命中了实验、COCO、幻觉或 benchmark 相关关键词。"
-    elif "数据集" in query or "dataset" in query.lower():
+        reason = "命中了实验、文件路径、CSV/JSONL、run_tag、coco_val、幻觉或 benchmark 相关关键词。"
+
+    #elif "数据集" in query or "dataset" in query.lower():
+    #    task_type = "dataset_recommendation"
+    #    reason = "命中了数据集 / dataset 关键词。"
+    elif (
+        "数据集" in query
+        or "dataset" in query.lower()
+        or "OpenImages" in query
+        or "MIAP" in query
+        or "FairFace" in query
+        or "GQA" in query
+        or "COCO" in query.upper()
+    ):
         task_type = "dataset_recommendation"
-        reason = "命中了数据集 / dataset 关键词。"
+        reason = "命中了数据集、dataset、OpenImages、MIAP、FairFace、GQA 或 COCO 相关关键词。"
+
+
     elif "汇报" in query or "PPT" in query.upper() or "组会" in query or "总结" in query:
         task_type = "report_generation"
         reason = "命中了汇报、PPT、组会或总结相关关键词。"
@@ -170,11 +197,30 @@ def paper_node(state: AgentState) -> dict:
     }
 
 
+
+def run_optional_tool_for_experiment(state: AgentState) -> dict:
+    """
+    对 experiment_analysis 问题尝试调用本地文件分析工具。
+
+    如果用户 query 中没有 CSV / JSONL 文件路径，则不调用工具。
+    """
+    query = state["query"]
+    tool_output = run_tool_from_query(query)
+
+    return {
+        "tool_used": tool_output.get("tool_used", "none"),
+        "tool_result": tool_output.get("analysis", {}),
+        "tool_result_text": tool_output.get("formatted_text", ""),
+    }
+
+
 '''
 def experiment_node(state: AgentState) -> dict:
     return {
         "result": "这是实验分析任务，后续会接入 CSV / JSONL 分析工具。"
     }
+'''
+
 '''
 def experiment_node(state: AgentState) -> dict:
     rag_result = run_rag_for_task(
@@ -193,6 +239,48 @@ def experiment_node(state: AgentState) -> dict:
     return {
         "retrieved_docs": rag_result["retrieved_docs"],
         "sources": rag_result["sources"],
+        "result": result,
+    }
+'''
+
+def experiment_node(state: AgentState) -> dict:
+    # 1. 先做 RAG 检索
+    rag_result = run_rag_for_task(
+        state=state,
+        task_type="experiment_analysis",
+        top_k=3,
+    )
+
+    # 2. 再尝试调用 CSV / JSONL 工具
+    tool_state = run_optional_tool_for_experiment(state)
+
+    tool_used = tool_state["tool_used"]
+    tool_text = tool_state["tool_result_text"]
+
+    if tool_used != "none" and tool_text:
+        tool_section = f"""
+本地实验文件分析结果：
+{tool_text}
+""".strip()
+    else:
+        tool_section = "本次问题未检测到 CSV / JSONL 文件路径，因此未调用本地文件分析工具。"
+
+    result = f"""
+这是实验分析任务。系统已完成 RAG 检索，并根据需要尝试调用本地实验文件分析工具。
+
+一、工具分析
+{tool_section}
+
+二、相关实验资料检索
+{build_simple_answer_from_context(state["query"], rag_result["retrieved_context"])}
+""".strip()
+
+    return {
+        "retrieved_docs": rag_result["retrieved_docs"],
+        "sources": rag_result["sources"],
+        "tool_used": tool_state["tool_used"],
+        "tool_result": tool_state["tool_result"],
+        "tool_result_text": tool_state["tool_result_text"],
         "result": result,
     }
 
@@ -318,6 +406,7 @@ def final_answer_node(state: AgentState) -> dict:
 任务类型：{state["task_type"]}
 分类来源：{state["classifier_source"]}
 分类原因：{state["route_reason"]}
+工具调用：{state.get("tool_used", "none")}
 
 回答：
 {state["result"]}

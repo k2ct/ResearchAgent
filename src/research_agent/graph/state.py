@@ -13,7 +13,7 @@ class AgentState(TypedDict):
     route_reason: str
 '''
 
-from typing import TypedDict, List, Dict
+from typing import TypedDict, List, Dict, Any
 
 
 class AgentState(TypedDict):
@@ -28,3 +28,8 @@ class AgentState(TypedDict):
     # Day 9 新增：RAG 检索结果
     retrieved_docs: List[Dict]
     sources: List[Dict]
+
+    # Day 12 新增：工具调用结果
+    tool_used: str
+    tool_result: Dict[str, Any]
+    tool_result_text: str
