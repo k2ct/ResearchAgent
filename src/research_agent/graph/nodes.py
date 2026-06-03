@@ -1,4 +1,5 @@
 from .state import AgentState
+from research_agent.report.report_writer import build_report_from_context
 
 from .llm_classifier import classify_with_llm, get_llm_classifier_enabled
 
@@ -42,46 +43,64 @@ def classify_task_by_rule(query: str) -> dict:
     """
     规则分类器：作为 LLM 分类失败后的兜底。
     """
-    if "论文" in query or "paper" in query.lower():
+    query_lower = query.lower()
+    query_upper = query.upper()
+
+    if (
+        "汇报" in query
+        or "组会" in query
+        or "文案" in query
+        or "草稿" in query
+        or "报告" in query
+        or "PPT" in query_upper
+        or "presentation" in query_lower
+        or "slide" in query_lower
+    ):
+        task_type = "report_generation"
+        reason = "命中了汇报、PPT、组会、文案、草稿、报告或 presentation 相关关键词。"
+    elif "论文" in query or "paper" in query_lower or "related work" in query_lower:
         task_type = "paper_question"
-        reason = "命中了论文 / paper 关键词。"
-    #elif "实验" in query or "coco" in query.lower() or "幻觉" in query or "benchmark" in query.lower():
+        reason = "命中了论文、paper 或 related work 相关关键词。"
+    #elif "实验" in query or "coco" in query_lower or "幻觉" in query or "benchmark" in query_lower:
     #    task_type = "experiment_analysis"
     #    reason = "命中了实验、COCO、幻觉或 benchmark 相关关键词。"
     elif (
         "实验" in query
-        or "coco_val" in query.lower()
-        or "run_tag" in query.lower()
+        or "coco_val" in query_lower
+        or "run_tag" in query_lower
         or "幻觉" in query
-        or "benchmark" in query.lower()
-        or ".csv" in query.lower()
-        or ".jsonl" in query.lower()
+        or "benchmark" in query_lower
+        or ".csv" in query_lower
+        or ".jsonl" in query_lower
     ):
         task_type = "experiment_analysis"
         reason = "命中了实验、文件路径、CSV/JSONL、run_tag、coco_val、幻觉或 benchmark 相关关键词。"
 
-    #elif "数据集" in query or "dataset" in query.lower():
+    #elif "数据集" in query or "dataset" in query_lower:
     #    task_type = "dataset_recommendation"
     #    reason = "命中了数据集 / dataset 关键词。"
     elif (
         "数据集" in query
-        or "dataset" in query.lower()
+        or "dataset" in query_lower
         or "OpenImages" in query
         or "MIAP" in query
         or "FairFace" in query
         or "GQA" in query
-        or "COCO" in query.upper()
+        or "COCO" in query_upper
     ):
         task_type = "dataset_recommendation"
         reason = "命中了数据集、dataset、OpenImages、MIAP、FairFace、GQA 或 COCO 相关关键词。"
-
-
-    elif "汇报" in query or "PPT" in query.upper() or "组会" in query or "总结" in query:
-        task_type = "report_generation"
-        reason = "命中了汇报、PPT、组会或总结相关关键词。"
-    elif "代码" in query or "脚本" in query or "bug" in query.lower() or "报错" in query or "环境" in query:
+    elif (
+        "代码" in query
+        or "脚本" in query
+        or "bug" in query_lower
+        or "modulenotfounderror" in query_lower
+        or "no module named" in query_lower
+        or "报错" in query
+        or "环境" in query
+    ):
         task_type = "code_help"
-        reason = "命中了代码、脚本、bug、报错或环境相关关键词。"
+        reason = "命中了代码、脚本、bug、ModuleNotFoundError、报错或环境相关关键词。"
     else:
         task_type = "general"
         reason = "未命中明确任务关键词，归为通用科研助手任务。"
@@ -516,8 +535,38 @@ def report_node(state: AgentState) -> dict:
     }
 '''
 def report_node(state: AgentState) -> dict:
+    """
+    Day19: Report Writer 最小版本。
+
+    逻辑：
+    1. 对 report_generation 问题做较宽泛 RAG 检索；
+    2. 将 retrieved_docs 交给 report_writer；
+    3. 返回结构化科研汇报草稿。
+    """
+    # report 任务通常可能需要实验、论文、数据集多类资料
+    # 当前先用 general 检索全库，后续可以改成多路检索融合。
+    rag_result = run_rag_for_task(
+        state=state,
+        task_type="general",
+        top_k=4,
+    )
+
+    report_text = build_report_from_context(
+        query=state["query"],
+        retrieved_docs=rag_result["retrieved_docs"],
+    )
+
+    result = f"""
+这是汇报生成任务。系统已根据本地科研资料库生成一份结构化汇报草稿。
+
+{report_text}
+""".strip()
+
     return {
-        "retrieved_docs": [],
-        "sources": [],
-        "result": "这是汇报生成任务，后续会接入 Report Writer。"
+        "retrieved_docs": rag_result["retrieved_docs"],
+        "sources": rag_result["sources"],
+        "tool_used": "none",
+        "tool_result": {},
+        "tool_result_text": "",
+        "result": result,
     }
