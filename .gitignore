@@ -46,3 +46,7 @@ notebooks/day*.ipynb
 
 #notebooks
 notebooks/*.ipynb
+
+#private test files
+test_demo.py
+test_streamlit_min.py
