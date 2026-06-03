@@ -313,3 +313,12 @@ Evidence Checker 会检查当前回答是否具备支撑依据，例如：
 3. 运行 CLI 或 Streamlit Demo
 
 这样可以更快确认是依赖问题、索引问题，还是 UI 问题。
+
+## 项目亮点
+
+- **LangGraph 多节点工作流**：使用显式状态管理和条件路由组织 Agent 流程。
+- **Agentic RAG**：根据任务类型选择不同资料库检索范围，而不是全库混合检索。
+- **实验工具调用**：支持 CSV 和 JSONL 实验文件分析，适合科研实验结果解释场景。
+- **Evidence Checker**：在最终回答前检查是否存在 Sources 或工具结果支撑。
+- **Streamlit Web Demo**：提供可视化界面，展示任务类型、工具调用、证据状态和 Debug State。
+- **工程化结构**：采用 `src/`、`scripts/`、`data/`、`docs/` 等目录组织，便于扩展和展示。
