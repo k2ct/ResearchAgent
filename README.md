@@ -283,7 +283,7 @@ ResearchAgent 支持基于 RAG Sources 的科研汇报草稿生成。
 示例输入：
 
 ```text
-帮我生成 coco_val_n300_g1 实验的组会汇报文本
+OpenImages-MIAP的性别标注是图像级还是bbox级，请给我一个PPT制作辅助
 ```
 
 #### LLM-assisted Report Writer — 组会汇报
@@ -296,7 +296,7 @@ ResearchAgent 支持基于 RAG Sources 的科研汇报草稿生成。
 
 ![Report Writer Demo 2](report-writer-demo2.png)
 
-当用户输入 "请给我一份 OpenImages-MIAP 数据集相关的 PPT 汇报草稿" 时，系统自动检测汇报风格为 `ppt_slide`，生成按页组织的 PPT 文案，每页包含标题和要点，Sources 可追溯到 `data/datasets/openimages_miap.md`。
+当用户输入 "OpenImages-MIAP的性别标注是图像级还是bbox级，请给我一个PPT制作辅助" 时，系统自动检测汇报风格为 `ppt_slide`，生成按页组织的 PPT 文案，每页包含标题和要点，Sources 可追溯到 `data/datasets/openimages_miap.md`。
 
 #### Streamlit Web UI 中的 Report Writer
 
