@@ -43,3 +43,6 @@ storage/
 
 # Local notebook drafts
 notebooks/day*.ipynb
+
+#notebooks
+notebooks/*.ipynb
