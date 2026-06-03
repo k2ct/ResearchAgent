@@ -147,10 +147,10 @@ def classify_task(state: AgentState) -> dict:
 
 def build_simple_answer_from_context(query: str, retrieved_context: str) -> str:
     """
-    v0.2 最小回答生成器。
+    模板回答生成器（非 LLM fallback）。
 
-    当前版本不调用 LLM，只把检索上下文整理成可读回答。
-    后续可以替换为 LLM-based answer generator。
+    当前版本在未启用 LLM 时使用检索内容摘要作为回答。
+    启用 LLM 后会自动切换为 LLM-based 综合生成。
     """
     if not retrieved_context or retrieved_context == "未检索到相关资料。":
         return "暂未在本地科研资料库中检索到足够相关的资料。"
@@ -161,7 +161,7 @@ def build_simple_answer_from_context(query: str, retrieved_context: str) -> str:
 检索到的相关资料摘要如下：
 {retrieved_context}
 
-说明：当前 v0.2 版本暂时使用检索内容摘要作为回答，后续可以接入 LLM 对 retrieved_docs 进行综合生成。
+说明：当前版本在未启用 LLM 时使用检索内容摘要作为回答，启用 LLM 后会自动切换为 LLM-based 综合生成。
 """.strip()
 
 

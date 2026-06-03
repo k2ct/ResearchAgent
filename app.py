@@ -69,7 +69,7 @@ def run_agent(query: str) -> dict:
 # =========================
 
 st.set_page_config(
-    page_title="ResearchAgent v0.3",
+    page_title="ResearchAgent v0.4 Preview",
     page_icon="🧠",
     layout="wide",
 )
@@ -79,7 +79,7 @@ st.set_page_config(
 # Sidebar
 # =========================
 
-st.sidebar.title("ResearchAgent v0.3")
+st.sidebar.title("ResearchAgent v0.4 Preview")
 
 st.sidebar.markdown(
     """
@@ -89,6 +89,7 @@ st.sidebar.markdown(
 - Agentic RAG
 - CSV / JSONL tool calling
 - Evidence Checker
+- Report Writer (Template / LLM-assisted)
 - Sources display
 """
 )
@@ -118,8 +119,8 @@ selected_example = st.sidebar.selectbox(
 # Main UI
 # =========================
 
-st.title("🧠 ResearchAgent v0.3")
-st.caption("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker")
+st.title("🧠 ResearchAgent v0.4 Preview")
+st.caption("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker + LLM-assisted Report Writer")
 
 st.markdown(
     """
