@@ -314,6 +314,19 @@ Evidence Checker 会检查当前回答是否具备支撑依据，例如：
 
 这样可以更快确认是依赖问题、索引问题，还是 UI 问题。
 
+## Optional LLM-assisted Report Writer
+
+ResearchAgent 支持可选的 LLM 辅助报告生成能力。
+
+默认情况下，该功能关闭，项目会使用模板版 Report Writer。
+
+如需启用，请在 `.env` 中设置：
+
+```env
+ENABLE_LLM_REPORT_WRITER=true
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+
 ## 项目亮点
 
 - **LangGraph 多节点工作流**：使用显式状态管理和条件路由组织 Agent 流程。

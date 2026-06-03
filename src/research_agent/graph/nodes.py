@@ -12,6 +12,8 @@ from research_agent.rag.retriever import (
 
 from research_agent.tools.tool_router import run_tool_from_query
 
+from research_agent.report.llm_report_writer import generate_report_with_llm
+
 '''
 def classify_task(state: AgentState) -> dict:
     """
@@ -536,28 +538,45 @@ def report_node(state: AgentState) -> dict:
 '''
 def report_node(state: AgentState) -> dict:
     """
-    Day19: Report Writer 最小版本。
+    Day20: LLM-assisted Report Writer.
 
     逻辑：
-    1. 对 report_generation 问题做较宽泛 RAG 检索；
-    2. 将 retrieved_docs 交给 report_writer；
-    3. 返回结构化科研汇报草稿。
+    1. 对 report_generation 问题做全库 RAG 检索；
+    2. 优先尝试 LLM Report Writer；
+    3. 如果 LLM 不可用或失败，则 fallback 到模板版 Report Writer。
     """
-    # report 任务通常可能需要实验、论文、数据集多类资料
-    # 当前先用 general 检索全库，后续可以改成多路检索融合。
     rag_result = run_rag_for_task(
         state=state,
         task_type="general",
         top_k=4,
     )
 
-    report_text = build_report_from_context(
+    retrieved_docs = rag_result["retrieved_docs"]
+
+    llm_result = generate_report_with_llm(
         query=state["query"],
-        retrieved_docs=rag_result["retrieved_docs"],
+        retrieved_docs=retrieved_docs,
+        tool_result_text=state.get("tool_result_text", ""),
     )
 
+    if llm_result.get("ok"):
+        report_text = llm_result["report_text"]
+        report_method = f"LLM-assisted Report Writer ({llm_result.get('report_style')})"
+    else:
+        report_text = build_report_from_context(
+            query=state["query"],
+            retrieved_docs=retrieved_docs,
+        )
+        report_method = (
+            "Template fallback Report Writer "
+            f"(LLM unavailable: {llm_result.get('error')})"
+        )
+
     result = f"""
-这是汇报生成任务。系统已根据本地科研资料库生成一份结构化汇报草稿。
+这是汇报生成任务。系统已根据本地科研资料库生成结构化汇报草稿。
+
+生成方式：
+{report_method}
 
 {report_text}
 """.strip()
