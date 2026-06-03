@@ -100,7 +100,7 @@ def run_agent(query: str) -> dict:
 
 def print_welcome():
     print("=" * 60)
-    print("ResearchAgent v0.3 Agentic Demo")
+    print("ResearchAgent v0.4 Agentic Demo")
     print("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker")
     print("=" * 60)
     print("支持任务类型：")
