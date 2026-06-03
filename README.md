@@ -271,6 +271,39 @@ Evidence Checker 会检查当前回答是否具备支撑依据，例如：
 
 它目前是规则版，适合做最小可用的可信度检查和调试提示。
 
+### 6. Report Writer Demo
+
+ResearchAgent 支持基于 RAG Sources 的科研汇报草稿生成。
+
+在 `report_generation` 任务中，系统会先检索本地科研资料库，再由 Report Writer 生成结构化组会汇报或 PPT 文案：
+
+- 如果启用了 **LLM Report Writer**（`.env` 中 `ENABLE_LLM_REPORT_WRITER=true`），则生成更自然的证据约束式汇报文本，并自动检测汇报风格（组会汇报 / PPT 大纲 / 论文摘要）；
+- 如果 **未配置 LLM**，则自动回退到 **Template Report Writer**，使用规则模板生成结构化草稿。
+
+示例输入：
+
+```text
+帮我生成 coco_val_n300_g1 实验的组会汇报文本
+```
+
+#### LLM-assisted Report Writer — 组会汇报
+
+![Report Writer Demo 1](report-writer-demo1.png)
+
+系统自动检测汇报风格为 `group_meeting`，基于 `coco.md`、`coco_val_n300_g1.md` 等 RAG Sources 生成包含研究背景、实验目标、方法流程、关键发现、局限与后续工作的完整组会汇报讲稿。每项结论均来自检索到的本地资料，Evidence Checker 标记为 `passed`。
+
+#### LLM-assisted Report Writer — PPT 大纲
+
+![Report Writer Demo 2](report-writer-demo2.png)
+
+当用户输入 "请给我一份 OpenImages-MIAP 数据集相关的 PPT 汇报草稿" 时，系统自动检测汇报风格为 `ppt_slide`，生成按页组织的 PPT 文案，每页包含标题和要点，Sources 可追溯到 `data/datasets/openimages_miap.md`。
+
+#### Streamlit Web UI 中的 Report Writer
+
+![Report Writer Demo 3](report-writer-demo3.png)
+
+在 Streamlit Web UI 中提交报告生成请求后，页面展示完整的 Debug 信息：`task_type=report_generation`、`evidence_status=passed`、RAG Sources 列表和 LLM-assisted Report Writer 生成的结构化汇报内容。
+
 ## 当前限制
 
 需要诚实说明的是，这仍然是一个 demo，而不是完整科研助手：
@@ -286,10 +319,9 @@ Evidence Checker 会检查当前回答是否具备支撑依据，例如：
 下一步可以继续增强以下能力：
 
 - 更复杂实验指标分析
-- 更强 Evidence Checker
-- Report Writer
+- 更强 Evidence Checker（如多跳证据链验证）
 - 多 Agent 协作
-- 更完善的 UI
+- 更完善的 Web UI
 - 支持更多文件类型
 
 ## 安全说明
