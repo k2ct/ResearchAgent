@@ -28,7 +28,7 @@ def get_embedding_model(model_name: str = DEFAULT_EMBEDDING_MODEL):
     """
     return HuggingFaceEmbeddings(
         model_name=model_name,
-        model_kwargs={"device": "cpu", "local_files_only": True},
+        model_kwargs={"device": "cpu"},
         encode_kwargs={"normalize_embeddings": True},
     )
 
@@ -61,23 +61,12 @@ def split_documents(
     return chunks
 
 
-def reset_vector_index(persist_directory: Path = CHROMA_DIR) -> bool:
+def reset_vector_index(persist_directory: Path = CHROMA_DIR) -> None:
     """
     删除旧的 Chroma 向量库目录。
     """
     if persist_directory.exists():
-        try:
-            shutil.rmtree(persist_directory)
-        except PermissionError as exc:
-            print(
-                "Warning: could not remove existing Chroma index. "
-                "It may be locked by Streamlit or Windows file permissions."
-            )
-            print(f"Locked path: {exc.filename}")
-            print("Continuing with the existing Chroma directory.")
-            return False
-
-    return True
+        shutil.rmtree(persist_directory)
 
 
 def build_vector_index(
