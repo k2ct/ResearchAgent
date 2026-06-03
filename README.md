@@ -358,6 +358,7 @@ ResearchAgent 支持可选的 LLM 辅助报告生成能力。
 ENABLE_LLM_REPORT_WRITER=true
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-4o-mini
+```
 
 ## 项目亮点
 
