@@ -258,3 +258,64 @@ def generate_report_with_llm(
             "report_text": "",
             "error": str(e),
         }
+
+
+def generate_report_with_memory(
+    query: str,
+    retrieved_docs: List[Dict],
+    tool_result_text: str = "",
+    report_style: Optional[str] = None,
+    save_memory: bool = False,
+) -> Dict:
+    """
+    Generate a report and optionally write it to the Memory Store.
+
+    Wraps ``generate_report_with_llm()`` and adds memory write-back.
+
+    Args:
+        query: User's report request.
+        retrieved_docs: RAG-retrieved documents for evidence.
+        tool_result_text: Optional tool analysis result.
+        report_style: group_meeting / ppt_slide / summary.
+        save_memory: If True, write to Memory Store via
+            memory.adapters.save_report_result().
+
+    Returns:
+        {
+            "ok": bool,
+            "report_text": str,
+            "report_style": str,
+            "used_llm": bool,
+            "error": str,
+            "memory_saved": bool,
+            "memory_result": dict | None,
+        }
+    """
+    result = generate_report_with_llm(
+        query=query,
+        retrieved_docs=retrieved_docs,
+        tool_result_text=tool_result_text,
+        report_style=report_style,
+    )
+
+    if save_memory and result.get("ok"):
+        try:
+            from research_agent.memory.adapters import save_report_result
+            memory_result = save_report_result({
+                "report_text": result.get("report_text", ""),
+                "report_style": result.get("report_style", ""),
+                "task_type": "report_generation",
+                "used_llm": result.get("used_llm", False),
+                "sources": [],
+                "evidence_status": "passed" if result.get("ok") else "unknown",
+            }, auto_write=True)
+        except Exception as e:
+            memory_result = {"ok": False, "error": str(e)}
+
+        result["memory_saved"] = bool(memory_result.get("ok"))
+        result["memory_result"] = memory_result
+    else:
+        result["memory_saved"] = False
+        result["memory_result"] = None
+
+    return result

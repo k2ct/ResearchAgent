@@ -477,7 +477,7 @@ def _build_memory_records(
 # 5. Main entry point
 # ═══════════════════════════════════════════════════════════════════════════
 
-def generate_progress_memory(path: Path, use_llm: bool = False) -> Dict[str, Any]:
+def generate_progress_memory(path: Path, use_llm: bool = False, save_memory: bool = False) -> Dict[str, Any]:
     """
     Generate a Research Progress Memory from a slide markdown file.
 
@@ -488,13 +488,17 @@ def generate_progress_memory(path: Path, use_llm: bool = False) -> Dict[str, Any
     use_llm : bool
         If True, attempt LLM enhancement of the progress memory.
         Falls back gracefully to rule-based output when LLM is unavailable.
+    save_memory : bool
+        If True, write the result to the Memory Store via
+        memory.adapters.save_progress_memory_result().
 
     Returns
     -------
     dict
         Keys: *source_path*, *metadata*, *slides*, *topics*,
         *progress_memory* (str), *memory_records* (list),
-        *used_llm* (bool), *llm_error* (str).
+        *used_llm* (bool), *llm_error* (str),
+        *memory_saved* (bool), *memory_result* (dict | None).
     """
     loaded = load_slide_markdown(path)
     metadata = loaded["metadata"]
@@ -527,7 +531,7 @@ def generate_progress_memory(path: Path, use_llm: bool = False) -> Dict[str, Any
         except Exception as e:
             llm_error = f"{type(e).__name__}: {e}"
 
-    return {
+    result = {
         "source_path": str(path),
         "metadata": metadata,
         "slides": slides,
@@ -537,6 +541,22 @@ def generate_progress_memory(path: Path, use_llm: bool = False) -> Dict[str, Any
         "used_llm": used_llm,
         "llm_error": llm_error,
     }
+
+    # Optional memory write-back
+    if save_memory:
+        try:
+            from research_agent.memory.adapters import save_progress_memory_result
+            memory_result = save_progress_memory_result(result, auto_write=True)
+        except Exception as e:
+            memory_result = {"ok": False, "error": str(e)}
+
+        result["memory_saved"] = bool(memory_result.get("ok"))
+        result["memory_result"] = memory_result
+    else:
+        result["memory_saved"] = False
+        result["memory_result"] = None
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -786,13 +786,15 @@ def _generate_followup_questions(meta: Dict[str, Any], sections: Dict[str, str])
 # 5. Main entry point
 # ---------------------------------------------------------------------------
 
-def read_paper(path: Path, use_llm: bool = False) -> Dict[str, Any]:
+def read_paper(path: Path, use_llm: bool = False, save_memory: bool = False) -> Dict[str, Any]:
     """
     Read a paper and generate a structured reading note.
 
     Args:
         path: Path to the paper markdown file.
         use_llm: Reserved for future LLM-assisted reading notes.
+        save_memory: If True, write the result to the Memory Store via
+            memory.adapters.save_paper_reading_result().
 
     Returns::
 
@@ -804,6 +806,10 @@ def read_paper(path: Path, use_llm: bool = False) -> Dict[str, Any]:
             "sources": [...],
             "status": "success" | "error",
             "error": str,
+            "used_llm": bool,
+            "llm_error": str,
+            "memory_saved": bool,
+            "memory_result": dict | None,
         }
     """
     result = {
@@ -865,6 +871,20 @@ def read_paper(path: Path, use_llm: bool = False) -> Dict[str, Any]:
 
     except Exception as e:
         result["error"] = f"{type(e).__name__}: {e}"
+
+    # Step 6: Optional memory write-back
+    if save_memory and result["status"] == "success":
+        try:
+            from research_agent.memory.adapters import save_paper_reading_result
+            memory_result = save_paper_reading_result(result, auto_write=True)
+        except Exception as e:
+            memory_result = {"ok": False, "error": str(e)}
+
+        result["memory_saved"] = bool(memory_result.get("ok"))
+        result["memory_result"] = memory_result
+    else:
+        result["memory_saved"] = False
+        result["memory_result"] = None
 
     return result
 

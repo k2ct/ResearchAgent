@@ -455,6 +455,7 @@ def generate_claim_support(
     claim: str,
     top_k_per_query: int = 3,
     use_llm: bool = False,
+    save_memory: bool = False,
 ) -> Dict:
     """
     Main entry point for Claim Support Retrieval.
@@ -463,6 +464,8 @@ def generate_claim_support(
         claim: The scientific claim to find support for.
         top_k_per_query: Number of results per sub-query.
         use_llm: Whether to use LLM for report enhancement (v2).
+        save_memory: If True, write the result to the Memory Store via
+            memory.adapters.save_claim_support_result().
 
     Returns:
         {
@@ -473,6 +476,10 @@ def generate_claim_support(
             "grouped_evidence": dict,
             "report": str,
             "sources": list,
+            "used_llm": bool,
+            "llm_error": str,
+            "memory_saved": bool,
+            "memory_result": dict | None,
         }
     """
     # 1. Classify claim
@@ -518,7 +525,7 @@ def generate_claim_support(
                 "section_title": item.get("section_title", ""),
             })
 
-    return {
+    result = {
         "claim": claim,
         "claim_type": intent["claim_type"],
         "queries": queries,
@@ -529,3 +536,19 @@ def generate_claim_support(
         "used_llm": used_llm,
         "llm_error": llm_error,
     }
+
+    # 8. Optional memory write-back
+    if save_memory:
+        try:
+            from research_agent.memory.adapters import save_claim_support_result
+            memory_result = save_claim_support_result(result, auto_write=True)
+        except Exception as e:
+            memory_result = {"ok": False, "error": str(e)}
+
+        result["memory_saved"] = bool(memory_result.get("ok"))
+        result["memory_result"] = memory_result
+    else:
+        result["memory_saved"] = False
+        result["memory_result"] = None
+
+    return result
