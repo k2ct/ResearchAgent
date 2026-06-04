@@ -38,3 +38,10 @@ class AgentState(TypedDict):
     evidence_status: str
     evidence_reason: str
     evidence_warnings: List[str]
+
+    # Phase 3: Memory-aware fields
+    memory_context: str
+    retrieved_memories: List[Dict]
+    memory_count: int
+    memory_used: bool
+    memory_error: str

@@ -12,6 +12,7 @@ from .nodes import (
     evidence_check_node,
     final_answer_node,
     report_node,
+    retrieve_memory_node,
 )
 from .router import route_task
 
@@ -27,6 +28,7 @@ def build_graph():
     workflow.add_node("code_node", code_node)
     workflow.add_node("general_node", general_node)
     workflow.add_node("report_node", report_node)
+    workflow.add_node("retrieve_memory", retrieve_memory_node)
     workflow.add_node("evidence_check", evidence_check_node)
     workflow.add_node("final_answer", final_answer_node)
 
@@ -45,13 +47,15 @@ def build_graph():
         },
     )
 
-    workflow.add_edge("paper_node", "evidence_check")
-    workflow.add_edge("experiment_node", "evidence_check")
-    workflow.add_edge("dataset_node", "evidence_check")
-    workflow.add_edge("report_node", "evidence_check")
-    workflow.add_edge("code_node", "evidence_check")
-    workflow.add_edge("general_node", "evidence_check")
+    # Each task node → memory retrieval → evidence check → final answer
+    workflow.add_edge("paper_node", "retrieve_memory")
+    workflow.add_edge("experiment_node", "retrieve_memory")
+    workflow.add_edge("dataset_node", "retrieve_memory")
+    workflow.add_edge("report_node", "retrieve_memory")
+    workflow.add_edge("code_node", "retrieve_memory")
+    workflow.add_edge("general_node", "retrieve_memory")
 
+    workflow.add_edge("retrieve_memory", "evidence_check")
     workflow.add_edge("evidence_check", "final_answer")
     workflow.add_edge("final_answer", END)
 

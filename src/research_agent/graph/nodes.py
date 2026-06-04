@@ -1,3 +1,5 @@
+import os
+
 from .state import AgentState
 from research_agent.report.report_writer import build_report_from_context
 
@@ -506,7 +508,124 @@ def format_warnings(warnings: list) -> str:
     )
 
 
+def _is_memory_aware_enabled() -> bool:
+    """Check whether memory-aware retrieval is enabled via env var."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    value = os.getenv("ENABLE_MEMORY_AWARE_AGENT", "false").lower()
+    return value in ("1", "true", "yes", "y")
+
+
+def retrieve_memory_node(state: AgentState) -> dict:
+    """
+    Retrieve relevant memories from the Memory Store for the current query.
+
+    Safely no-ops when ENABLE_MEMORY_AWARE_AGENT is false or the Memory
+    system is unavailable.  Never raises — failures return empty memory.
+    """
+    query = state.get("query", "")
+    task_type = state.get("task_type", "general")
+
+    if not _is_memory_aware_enabled():
+        return {
+            "memory_context": "",
+            "retrieved_memories": [],
+            "memory_count": 0,
+            "memory_used": False,
+            "memory_error": "Memory-aware agent disabled",
+        }
+
+    try:
+        from research_agent.memory.memory_aware_agent import (
+            retrieve_memories_for_query,
+            format_memory_context,
+        )
+
+        top_k = int(os.getenv("MEMORY_TOP_K", "5"))
+        include_short = os.getenv("MEMORY_INCLUDE_SHORT_TERM", "true").lower() in ("1", "true", "yes", "y")
+        include_expired = os.getenv("MEMORY_INCLUDE_EXPIRED", "false").lower() in ("1", "true", "yes", "y")
+
+        memories = retrieve_memories_for_query(
+            query=query,
+            task_type=task_type,
+            max_results=top_k,
+            include_short_term=include_short,
+            include_expired=include_expired,
+        )
+
+        memory_context = format_memory_context(memories)
+
+        return {
+            "retrieved_memories": memories,
+            "memory_context": memory_context,
+            "memory_count": len(memories),
+            "memory_used": len(memories) > 0,
+            "memory_error": "",
+        }
+
+    except Exception as e:
+        return {
+            "memory_context": "",
+            "retrieved_memories": [],
+            "memory_count": 0,
+            "memory_used": False,
+            "memory_error": f"{type(e).__name__}: {e}",
+        }
+
+
+def _merge_memory_into_answer(answer: str, state: AgentState) -> str:
+    """Append memory context to the final answer if available."""
+    memory_context = state.get("memory_context", "")
+    memory_count = state.get("memory_count", 0)
+
+    if not memory_context or memory_count == 0:
+        return answer
+
+    memory_section = f"""
+记忆检索：已使用 ({memory_count} 条)
+记忆上下文：
+{memory_context}
+""".strip()
+
+    return f"{answer}\n\n{memory_section}"
+
+
+def format_memory_debug(state: AgentState) -> str:
+    """Format memory debug info for CLI / Web UI display."""
+    memory_used = state.get("memory_used", False)
+    memory_count = state.get("memory_count", 0)
+    memory_error = state.get("memory_error", "")
+    memories = state.get("retrieved_memories", [])
+
+    if not memory_used and not memory_error:
+        return "Memory Used: False"
+
+    lines = [
+        f"Memory Used: {memory_used}",
+        f"Memory Count: {memory_count}",
+    ]
+
+    if memory_error:
+        lines.append(f"Memory Error: {memory_error}")
+
+    if memories:
+        lines.append("Memory IDs:")
+        for m in memories[:5]:
+            mid = m.get("memory_id", "?") if isinstance(m, dict) else "?"
+            mtype = m.get("memory_type", "?") if isinstance(m, dict) else "?"
+            summary = (m.get("summary", "") or "") if isinstance(m, dict) else ""
+            lines.append(f"- {mid} ({mtype}) {summary[:80]}")
+
+    return "\n".join(lines)
+
+
 def final_answer_node(state: AgentState) -> dict:
+    # Merge memory context into answer if available
+    result = state.get("result", "")
+    result = _merge_memory_into_answer(result, state)
+
+    memory_debug = format_memory_debug(state)
+
     final_answer = f"""
 任务类型：{state["task_type"]}
 分类来源：{state["classifier_source"]}
@@ -518,8 +637,10 @@ def final_answer_node(state: AgentState) -> dict:
 证据警告：
 {format_warnings(state.get("evidence_warnings", []))}
 
+{memory_debug}
+
 回答：
-{state["result"]}
+{result}
 
 Sources:
 {format_sources(state.get("sources", []))}

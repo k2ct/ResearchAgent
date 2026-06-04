@@ -81,6 +81,13 @@ def create_initial_state(query: str) -> dict:
         "evidence_status": "",
         "evidence_reason": "",
         "evidence_warnings": [],
+
+        # Phase 3: Memory-aware
+        "memory_context": "",
+        "retrieved_memories": [],
+        "memory_count": 0,
+        "memory_used": False,
+        "memory_error": "",
     }
 
 

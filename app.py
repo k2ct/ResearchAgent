@@ -41,6 +41,13 @@ def create_initial_state(query: str) -> dict:
         "evidence_status": "",
         "evidence_reason": "",
         "evidence_warnings": [],
+
+        # Phase 3: Memory-aware
+        "memory_context": "",
+        "retrieved_memories": [],
+        "memory_count": 0,
+        "memory_used": False,
+        "memory_error": "",
     }
 
 
@@ -155,7 +162,7 @@ if run_button:
         # Summary cards
         # -------------------------
 
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
             st.metric("任务类型", result.get("task_type", "unknown"))
@@ -167,7 +174,10 @@ if run_button:
             st.metric("证据状态", result.get("evidence_status", "unknown"))
 
         with col4:
-            st.metric("Sources 数量", len(result.get("sources", [])))
+            st.metric("Sources", len(result.get("sources", [])))
+
+        with col5:
+            st.metric("Memory", result.get("memory_count", 0))
 
         st.markdown("---")
 
@@ -236,6 +246,42 @@ if run_button:
             st.success("无证据警告。")
 
         # -------------------------
+        # Memory
+        # -------------------------
+
+        st.subheader("研究记忆")
+
+        memory_used = result.get("memory_used", False)
+        memory_count = result.get("memory_count", 0)
+        memory_error = result.get("memory_error", "")
+
+        if memory_error and "disabled" not in memory_error.lower():
+            st.warning(f"Memory retrieval error: {memory_error}")
+        elif memory_used:
+            st.success(f"Memory Used: True ({memory_count} records)")
+        else:
+            st.info(f"Memory Used: False ({'disabled' if memory_error else 'no relevant memories'})")
+
+        memories = result.get("retrieved_memories", [])
+        if memories:
+            for i, m in enumerate(memories[:5], start=1):
+                mid = m.get("memory_id", "?") if isinstance(m, dict) else "?"
+                mtype = m.get("memory_type", "?") if isinstance(m, dict) else "?"
+                summary = (m.get("summary", "") or m.get("content", "")[:100]) if isinstance(m, dict) else ""
+                tags = m.get("tags", []) if isinstance(m, dict) else []
+                source_title = m.get("source_title", "") if isinstance(m, dict) else ""
+                tag_str = ", ".join(tags[:5]) if tags else ""
+
+                label = f"{i}. [{mtype}] {mid[:12]}..."
+                if source_title:
+                    label += f" — {source_title[:60]}"
+
+                with st.expander(label):
+                    st.write("**Summary:**", summary[:300])
+                    if tag_str:
+                        st.write("**Tags:**", tag_str)
+
+        # -------------------------
         # Debug
         # -------------------------
 
@@ -251,3 +297,6 @@ if run_button:
 
             with st.expander("查看 tool_result"):
                 st.json(result.get("tool_result", {}))
+
+            with st.expander("查看 retrieved_memories"):
+                st.json(result.get("retrieved_memories", []))
