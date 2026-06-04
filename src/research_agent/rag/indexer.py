@@ -1,6 +1,6 @@
 from pathlib import Path
 import shutil
-from typing import List
+from typing import List, Optional
 
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
@@ -36,17 +36,19 @@ def get_embedding_model(model_name: str = DEFAULT_EMBEDDING_MODEL):
 
 def split_documents(
     documents: List[Document],
-    chunk_size: int = 500,
-    chunk_overlap: int = 80,
+    chunk_size: Optional[int] = None,
+    chunk_overlap: Optional[int] = None,
 ) -> List[Document]:
     """
     将原始 Document 切分成更小的 chunk。
 
     chunk_size:
         每个片段的大致长度 (max_chars)。
+        None → 自动从 doc type profile 或环境变量读取。
 
     chunk_overlap:
         相邻片段之间保留的重叠长度，避免上下文断裂 (overlap_chars)。
+        None → 自动从 doc type profile 或环境变量读取。
 
     v1: Markdown-aware / Section-aware chunking.
         优先按 Markdown 标题切分，识别 ## Page N / ## Slide N，

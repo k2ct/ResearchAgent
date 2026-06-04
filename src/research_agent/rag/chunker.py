@@ -15,6 +15,7 @@ This module is designed to be a drop-in replacement for the simple
 
 from __future__ import annotations
 
+import os
 import re
 from copy import deepcopy
 from typing import Dict, List, Optional, Tuple
@@ -38,6 +39,131 @@ PARAGRAPH_SPLIT_PATTERN = re.compile(r"\n\s*\n")
 
 # Sentence boundaries (Chinese + English)
 SENTENCE_BOUNDARY = re.compile(r"(?<=[。！？.!?])\s*")
+
+# Sentinel value: "use profile / env config"
+_AUTO = object()
+
+# Hardcoded ultimate fallback defaults
+_DEFAULT_MAX_CHARS = 1200
+_DEFAULT_MIN_CHARS = 250
+_DEFAULT_OVERLAP_CHARS = 150
+
+
+# ---------------------------------------------------------------------------
+# 0. Configuration helpers
+# ---------------------------------------------------------------------------
+
+def get_chunking_config() -> dict:
+    """
+    Read chunking parameters from environment variables.
+
+    Checks (in order):
+    1. ``RAG_CHUNK_MAX_CHARS``  (default 1200)
+    2. ``RAG_CHUNK_MIN_CHARS``  (default 250)
+    3. ``RAG_CHUNK_OVERLAP_CHARS`` (default 150)
+
+    Returns a dict with keys *max_chars*, *min_chars*, *overlap_chars*.
+    """
+    def _int_env(key: str, fallback: int) -> int:
+        val = os.getenv(key, "").strip()
+        if val.isdigit():
+            return int(val)
+        return fallback
+
+    return {
+        "max_chars": _int_env("RAG_CHUNK_MAX_CHARS", _DEFAULT_MAX_CHARS),
+        "min_chars": _int_env("RAG_CHUNK_MIN_CHARS", _DEFAULT_MIN_CHARS),
+        "overlap_chars": _int_env("RAG_CHUNK_OVERLAP_CHARS", _DEFAULT_OVERLAP_CHARS),
+    }
+
+
+def get_doc_type_chunking_profile(metadata: dict) -> dict:
+    """
+    Return recommended chunking parameters for a document based on its
+    ``source_type`` / ``doc_type`` metadata.
+
+    Profiles
+    --------
+    - **slide_doc / pptx**: tighter chunks, zero overlap, preserve slide
+      boundaries.
+    - **paper_note / pdf**: larger chunks, higher overlap for academic prose.
+    - **experiment_doc**: moderate chunks, moderate overlap.
+    - **note_doc / misc_doc / default**: standard settings.
+
+    Returns a dict that may contain *max_chars*, *min_chars*,
+    *overlap_chars*, and *preserve_slide*.  Missing keys mean "use the
+    global default".
+    """
+    source_type = metadata.get("source_type", "")
+    doc_type = metadata.get("doc_type", "")
+
+    # --- slide / pptx ---
+    if source_type == "slide_doc" or doc_type == "pptx":
+        return {
+            "max_chars": 1000,
+            "min_chars": 100,
+            "overlap_chars": 0,
+            "preserve_slide": True,
+        }
+
+    # --- paper / PDF ---
+    if source_type == "paper_note" or doc_type == "pdf":
+        return {
+            "max_chars": 1500,
+            "min_chars": 300,
+            "overlap_chars": 180,
+        }
+
+    # --- experiment ---
+    if source_type == "experiment_doc":
+        return {
+            "max_chars": 1000,
+            "min_chars": 200,
+            "overlap_chars": 120,
+        }
+
+    # --- note / misc / default ---
+    if source_type in ("note_doc", "misc_doc"):
+        return {
+            "max_chars": 1200,
+            "min_chars": 250,
+            "overlap_chars": 150,
+        }
+
+    # dataset_doc and anything else: return empty → fall back to env / global
+    return {}
+
+
+def _resolve_chunking_params(
+    metadata: dict,
+    max_chars: Optional[int],
+    min_chars: Optional[int],
+    overlap_chars: Optional[int],
+) -> Tuple[int, int, int]:
+    """
+    Resolve the final (max_chars, min_chars, overlap_chars) for a document.
+
+    Resolution order (first wins):
+    1. Explicitly passed value (not None)
+    2. Per-doc-type profile via :func:`get_doc_type_chunking_profile`
+    3. Environment config via :func:`get_chunking_config`
+    4. Hardcoded defaults (1200 / 250 / 150)
+    """
+    profile = get_doc_type_chunking_profile(metadata)
+    env = get_chunking_config()
+
+    def _pick(key: str, explicit: Optional[int]) -> int:
+        if explicit is not None:
+            return explicit
+        if key in profile:
+            return profile[key]
+        return env.get(key, _DEFAULT_MAX_CHARS)
+
+    return (
+        _pick("max_chars", max_chars),
+        _pick("min_chars", min_chars),
+        _pick("overlap_chars", overlap_chars),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -412,9 +538,9 @@ def merge_small_sections(
 
 def chunk_document_markdown_aware(
     doc: Document,
-    max_chars: int = 1200,
-    min_chars: int = 250,
-    overlap_chars: int = 150,
+    max_chars: Optional[int] = None,
+    min_chars: Optional[int] = None,
+    overlap_chars: Optional[int] = None,
 ) -> List[Document]:
     """
     Split a single LangChain ``Document`` into chunks using a
@@ -442,12 +568,15 @@ def chunk_document_markdown_aware(
     ----------
     doc : Document
         The LangChain document to chunk.
-    max_chars : int
+    max_chars : int or None
         Target maximum characters per chunk.
-    min_chars : int
+        ``None`` → auto-detect from doc-type profile or env config.
+    min_chars : int or None
         Sections shorter than this may be merged.
-    overlap_chars : int
+        ``None`` → auto-detect from doc-type profile or env config.
+    overlap_chars : int or None
         Character overlap between paragraph-split chunks.
+        ``None`` → auto-detect from doc-type profile or env config.
 
     Returns
     -------
@@ -459,6 +588,11 @@ def chunk_document_markdown_aware(
     doc_type = original_metadata.get("doc_type", "")
     text = doc.page_content
 
+    # Resolve parameters: explicit > profile > env > hardcoded default
+    _max_chars, _min_chars, _overlap_chars = _resolve_chunking_params(
+        original_metadata, max_chars, min_chars, overlap_chars,
+    )
+
     # ------------------------------------------------------------------
     # Step 1: Detect sections
     # ------------------------------------------------------------------
@@ -467,7 +601,7 @@ def chunk_document_markdown_aware(
     # ------------------------------------------------------------------
     # Step 2: Determine if the doc is short enough to keep as-is
     # ------------------------------------------------------------------
-    if len(text) <= max_chars and len(sections) <= 1:
+    if len(text) <= _max_chars and len(sections) <= 1:
         # Short document — single chunk
         chunk_meta = dict(original_metadata)
         chunk_meta.update({
@@ -483,8 +617,8 @@ def chunk_document_markdown_aware(
     # ------------------------------------------------------------------
     # Step 3: Merge small sections (unless slide/page boundaries)
     # ------------------------------------------------------------------
-    sections = merge_small_sections(sections, min_chars=min_chars,
-                                    max_chars=max_chars,
+    sections = merge_small_sections(sections, min_chars=_min_chars,
+                                    max_chars=_max_chars,
                                     doc_metadata=original_metadata)
 
     # ------------------------------------------------------------------
@@ -502,13 +636,13 @@ def chunk_document_markdown_aware(
             strategy = "slide"
         elif sec.get("is_page"):
             strategy = "page"
-        elif sec_len <= max_chars:
+        elif sec_len <= _max_chars:
             strategy = "section"
         else:
             strategy = "section"
 
-        # If the section fits within max_chars, use it as-is
-        if sec_len <= max_chars:
+        # If the section fits within _max_chars, use it as-is
+        if sec_len <= _max_chars:
             chunk_meta = dict(original_metadata)
             chunk_meta["section_title"] = sec["title"]
             chunk_meta["section_path"] = sec["section_path"]
@@ -518,7 +652,7 @@ def chunk_document_markdown_aware(
         else:
             # Oversized section — split by paragraphs
             sub_texts = split_long_text_by_paragraphs(
-                sec_text, max_chars=max_chars, overlap_chars=overlap_chars
+                sec_text, max_chars=_max_chars, overlap_chars=_overlap_chars
             )
             for sub_text in sub_texts:
                 chunk_meta = dict(original_metadata)
@@ -560,9 +694,9 @@ def chunk_document_markdown_aware(
 
 def chunk_documents_markdown_aware(
     docs: List[Document],
-    max_chars: int = 1200,
-    min_chars: int = 250,
-    overlap_chars: int = 150,
+    max_chars: Optional[int] = None,
+    min_chars: Optional[int] = None,
+    overlap_chars: Optional[int] = None,
 ) -> List[Document]:
     """
     Split a list of LangChain ``Document`` objects using
@@ -572,12 +706,15 @@ def chunk_documents_markdown_aware(
     ----------
     docs : List[Document]
         Source documents (from loaders).
-    max_chars : int
+    max_chars : int or None
         Target maximum characters per chunk.
-    min_chars : int
+        ``None`` → auto-detect per document from its profile / env config.
+    min_chars : int or None
         Sections shorter than this may be merged.
-    overlap_chars : int
+        ``None`` → auto-detect per document.
+    overlap_chars : int or None
         Character overlap between paragraph-split chunks.
+        ``None`` → auto-detect per document.
 
     Returns
     -------
