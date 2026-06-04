@@ -1,5 +1,7 @@
-from typing import Dict, List, Optional
+import os
+from typing import Dict, List, Optional, Tuple
 
+from dotenv import load_dotenv
 from langchain_core.documents import Document
 
 from .indexer import load_vector_store
@@ -15,11 +17,24 @@ TASK_TYPE_TO_SOURCE_TYPE = {
     "experiment_analysis": SOURCE_TYPE_EXPERIMENT,
     "dataset_recommendation": SOURCE_TYPE_DATASET,
 
-    # 兼容一些简写
+    # Compat aliases
     "paper": SOURCE_TYPE_PAPER,
     "experiment": SOURCE_TYPE_EXPERIMENT,
     "dataset": SOURCE_TYPE_DATASET,
 }
+
+
+def _resolve_retrieval_mode(mode: Optional[str] = None) -> str:
+    """
+    Resolve the retrieval mode from parameter or environment variable.
+
+    Priority: explicit parameter > RAG_RETRIEVAL_MODE env var > default "vector"
+    """
+    if mode is not None:
+        return mode
+
+    load_dotenv()
+    return os.getenv("RAG_RETRIEVAL_MODE", "vector")
 
 
 def get_source_type_for_task(task_type: str) -> Optional[str]:
@@ -59,19 +74,42 @@ def retrieve_documents(
     task_type: str,
     top_k: int = 3,
     use_filter: bool = True,
+    retrieval_mode: Optional[str] = None,
 ) -> List[Document]:
     """
-    根据 query 和 task_type 检索相关文档。
+    Retrieve relevant documents for a query and task_type.
 
-    参数：
-    - query: 用户问题
-    - task_type: 阶段一 classify_task 得到的任务类型
-    - top_k: 返回前几个结果
-    - use_filter: 是否启用 metadata filter
+    Parameters
+    ----------
+    query : str
+        User query.
+    task_type : str
+        Task type from classify_task (paper_question, experiment_analysis, etc.).
+    top_k : int
+        Number of results to return.
+    use_filter : bool
+        Whether to apply metadata filter by task_type.
+    retrieval_mode : str or None
+        - "vector"   : Chroma vector similarity search (default).
+        - "hybrid"   : vector search + keyword search + score fusion.
+        - None       : read from RAG_RETRIEVAL_MODE env var (default "vector").
 
-    返回：
-    - List[Document]
+    Returns
+    -------
+    List[Document]
     """
+    mode = _resolve_retrieval_mode(retrieval_mode)
+
+    if mode == "hybrid":
+        # Lazy import to avoid circular dependency
+        from research_agent.rag.hybrid_retriever import hybrid_retrieve_documents
+        return hybrid_retrieve_documents(
+            query=query,
+            task_type=task_type,
+            top_k=top_k,
+        )
+
+    # Default vector mode
     vector_store = load_vector_store()
 
     metadata_filter = build_metadata_filter(task_type) if use_filter else None
@@ -106,18 +144,19 @@ def retrieve_documents_as_dicts(
     task_type: str,
     top_k: int = 3,
     use_filter: bool = True,
+    retrieval_mode: Optional[str] = None,
 ) -> List[Dict]:
     """
-    检索文档，并转成 dict 列表。
+    Retrieve documents and convert to plain dicts.
 
-    Day 9 接入 LangGraph 时，AgentState 里建议保存 dict，
-    而不是直接保存 Document 对象。
+    Day 9: AgentState stores dicts rather than Document objects.
     """
     docs = retrieve_documents(
         query=query,
         task_type=task_type,
         top_k=top_k,
         use_filter=use_filter,
+        retrieval_mode=retrieval_mode,
     )
 
     return [document_to_dict(doc) for doc in docs]
@@ -206,7 +245,26 @@ def retrieve_documents_with_scores(
     task_type: str,
     top_k: int = 3,
     use_filter: bool = True,
-):
+    retrieval_mode: Optional[str] = None,
+) -> List[Tuple[Document, float]]:
+    """
+    Retrieve documents with similarity/distance scores.
+
+    In vector mode, returns Chroma distance scores (lower = better).
+    In hybrid mode, returns fusion confidence scores (higher = better).
+    """
+    mode = _resolve_retrieval_mode(retrieval_mode)
+
+    if mode == "hybrid":
+        # Lazy import to avoid circular dependency
+        from research_agent.rag.hybrid_retriever import hybrid_retrieve_documents_with_scores
+        return hybrid_retrieve_documents_with_scores(
+            query=query,
+            task_type=task_type,
+            top_k=top_k,
+        )
+
+    # Default vector mode
     vector_store = load_vector_store()
 
     metadata_filter = build_metadata_filter(task_type) if use_filter else None
