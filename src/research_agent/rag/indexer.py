@@ -8,6 +8,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .loaders import load_all_documents
+from .chunker import chunk_documents_markdown_aware
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -42,10 +43,31 @@ def split_documents(
     将原始 Document 切分成更小的 chunk。
 
     chunk_size:
-        每个片段的大致长度。
+        每个片段的大致长度 (max_chars)。
 
     chunk_overlap:
-        相邻片段之间保留的重叠长度，避免上下文断裂。
+        相邻片段之间保留的重叠长度，避免上下文断裂 (overlap_chars)。
+
+    v1: Markdown-aware / Section-aware chunking.
+        优先按 Markdown 标题切分，识别 ## Page N / ## Slide N，
+        小 section 合并，超长 section 按段落再切分。
+    """
+    return chunk_documents_markdown_aware(
+        documents,
+        max_chars=chunk_size,
+        overlap_chars=chunk_overlap,
+    )
+
+
+def _split_documents_legacy(
+    documents: List[Document],
+    chunk_size: int = 500,
+    chunk_overlap: int = 80,
+) -> List[Document]:
+    """
+    (Legacy) 使用 RecursiveCharacterTextSplitter 切分文档。
+
+    保留此函数作为 fallback / 对比参考。
     """
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
