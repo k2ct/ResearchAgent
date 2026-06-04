@@ -61,6 +61,7 @@ def _extract_sources_text(sources: Any) -> str:
 
 _WRITER_AVAILABLE = False
 _write_memory_fn = None
+_normalize_id_fn = None
 
 try:
     from research_agent.memory.writer import write_memory_from_source as _wmfs
@@ -68,6 +69,21 @@ try:
     _WRITER_AVAILABLE = True
 except ImportError:
     pass
+
+try:
+    from research_agent.memory.writer import normalize_memory_id as _nmid
+    _normalize_id_fn = _nmid
+except ImportError:
+    pass
+
+
+def _get_memory_id(record: Any) -> str:
+    """Extract memory_id from a record (dict or MemoryRecord dataclass)."""
+    if record is None:
+        return ""
+    if isinstance(record, dict):
+        return record.get("memory_id", "")
+    return getattr(record, "memory_id", "")
 
 
 def _try_write(
@@ -98,6 +114,11 @@ def _try_write(
         result["error"] = "Memory writer unavailable — writer.py not importable."
         return result
 
+    # Inject adapter tracing into metadata
+    meta = dict(metadata or {})
+    meta.setdefault("adapter_version", "v1")
+    meta.setdefault("pipeline_stage", "phase3_memory")
+
     try:
         # When auto_write=False, only build the record — don't call writer
         if not auto_write:
@@ -108,13 +129,15 @@ def _try_write(
                     source_module=source_module,
                     source_path=source_path,
                     source_title=source_title,
-                    metadata=metadata or {},
+                    metadata=meta,
                 )
+                # Normalise to dict for consistent memory_id extraction
+                if isinstance(record, dict) and _normalize_id_fn is not None:
+                    record = _normalize_id_fn(record)
                 result["ok"] = True
                 result["record"] = record
                 result["write_result"] = None
-                if isinstance(record, dict):
-                    result["memory_id"] = record.get("memory_id", "") or record.get("record_id", "")
+                result["memory_id"] = _get_memory_id(record)
                 return result
             except ImportError:
                 result["error"] = "build_memory_record_from_source not available."
@@ -126,24 +149,26 @@ def _try_write(
             source_module=source_module,
             source_path=source_path,
             source_title=source_title,
-            metadata=metadata or {},
+            metadata=meta,
         )
 
         record = _safe_get(write_result, "record") or _safe_get(write_result, "build_result")
+
+        # Normalise dict records
+        if isinstance(record, dict) and _normalize_id_fn is not None:
+            record = _normalize_id_fn(record)
 
         result["ok"] = _safe_get(write_result, "ok", False)
         result["record"] = record
         result["write_result"] = write_result
 
         # Extract memory_id from record
-        if isinstance(record, dict):
-            result["memory_id"] = record.get("memory_id", "") or record.get("record_id", "")
-        elif hasattr(record, "memory_id"):
-            result["memory_id"] = record.memory_id or ""
+        result["memory_id"] = _get_memory_id(record)
 
+        # Fallback: try write_result internals
         if not result["memory_id"]:
             wr = _safe_get(write_result, "write_result", {}) or {}
-            result["memory_id"] = _safe_get(wr, "memory_id", "") or _safe_get(wr, "record_id", "")
+            result["memory_id"] = _safe_get(wr, "memory_id", "")
 
         if not result["ok"]:
             result["error"] = _safe_get(write_result, "error", "Write failed")
