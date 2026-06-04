@@ -162,6 +162,11 @@ def _normalise_record(record: Any) -> Dict[str, Any]:
             f"Expected dict or MemoryRecord, got {type(record).__name__}"
         )
 
+    # Migrate legacy record_id → memory_id
+    if "memory_id" not in d and "record_id" in d:
+        d["memory_id"] = d.pop("record_id")
+        d.setdefault("metadata", {})["_migrated_from_record_id"] = True
+
     # Ensure required keys exist
     d.setdefault("memory_id", str(uuid.uuid4()))
     d.setdefault("memory_type", "general_note")
@@ -172,8 +177,14 @@ def _normalise_record(record: Any) -> Dict[str, Any]:
     d.setdefault("summary", "")
     d.setdefault("source_title", "")
     d.setdefault("source_path", "")
+    d.setdefault("source_module", "manual")
+    d.setdefault("source_id", "")
     d.setdefault("tags", [])
+    d.setdefault("shared_with", [])
     d.setdefault("status", "active")
+    d.setdefault("visibility", "private")
+    d.setdefault("importance", 3)
+    d.setdefault("last_accessed_at", None)
     d.setdefault("metadata", {})
     now = datetime.now(timezone.utc).isoformat()
     d.setdefault("created_at", now)

@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 _SCHEMA_AVAILABLE = False
 _STORE_AVAILABLE = False
+_PRIVACY_AVAILABLE = False
 
 try:
     from research_agent.memory.schema import create_memory_record  # type: ignore[import-untyped]
@@ -44,14 +45,35 @@ try:
 except ImportError:
     pass
 
+try:
+    from research_agent.memory.privacy_scope import validate_scope_on_write  # type: ignore[import-untyped]
+    _PRIVACY_AVAILABLE = True
+except ImportError:
+    pass
+
+
+def normalize_memory_id(record: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ensure every record has a ``memory_id`` field.
+
+    If the record was created by an older fallback path that used
+    ``record_id``, migrate it to ``memory_id`` and stash the old key
+    in metadata for traceability.
+    """
+    if "memory_id" not in record and "record_id" in record:
+        record["memory_id"] = record["record_id"]
+        record.setdefault("metadata", {})["legacy_record_id"] = record.pop("record_id")
+    return record
+
 
 def _fallback_create_record(fields: Dict[str, Any]) -> Dict[str, Any]:
     """Minimal record builder when schema.py is unavailable."""
     now = datetime.now(timezone.utc).isoformat()
     return {
-        "record_id": f"mem_{int(datetime.now().timestamp() * 1000)}",
+        "memory_id": f"mem_{int(datetime.now().timestamp() * 1000)}",
         "created_at": now,
         "updated_at": now,
+        "last_accessed_at": None,
         "memory_level": fields.get("memory_level", "mid_term"),
         "memory_scope": fields.get("memory_scope", "private"),
         "memory_type": fields.get("memory_type", "general_note"),
@@ -62,16 +84,19 @@ def _fallback_create_record(fields: Dict[str, Any]) -> Dict[str, Any]:
         "tags": fields.get("tags", []),
         "source_module": fields.get("source_module", ""),
         "source_path": fields.get("source_path", ""),
+        "source_id": fields.get("source_id", ""),
         "source_title": fields.get("source_title", ""),
-        "importance": fields.get("importance", 0.5),
+        "importance": fields.get("importance", 3),
         "metadata": fields.get("metadata", {}),
         "status": "active",
+        "visibility": fields.get("visibility", "private"),
     }
 
 
 def _fallback_append(record: Dict[str, Any]) -> Dict[str, Any]:
     """Fallback when store.py is unavailable — returns record as-is."""
-    return {"ok": True, "record_id": record.get("record_id", ""),
+    memory_id = record.get("memory_id", record.get("record_id", ""))
+    return {"ok": True, "memory_id": memory_id,
             "written": False, "reason": "store.py not available — record returned but not persisted"}
 
 
@@ -722,6 +747,19 @@ def write_memory_from_source(
         explicit_level=memory_level,
         explicit_scope=explicit_scope,
     )
+
+    # Ensure memory_id is the canonical primary key
+    if isinstance(record, dict):
+        record = normalize_memory_id(record)
+
+    # Validate scope and auto-correct shared_with
+    if _PRIVACY_AVAILABLE:
+        try:
+            validation = validate_scope_on_write(record)
+            if isinstance(validation, dict):
+                record = validation.get("record", record)
+        except Exception:
+            pass  # validation is advisory; never block a write
 
     # Write to store
     if _STORE_AVAILABLE:
