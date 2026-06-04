@@ -99,6 +99,13 @@ models/
 outputs/
 
 # =========================
+# Local memory store
+# =========================
+data/memory/*.jsonl
+data/memory/*.md
+!data/memory/.gitkeep
+
+# =========================
 # Temporary files / logs
 # =========================
 tmp_*.txt
