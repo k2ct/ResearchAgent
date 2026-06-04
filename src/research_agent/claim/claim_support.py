@@ -490,7 +490,22 @@ def generate_claim_support(
     # 5. Build report
     report = build_claim_support_report(claim, grouped, use_llm=use_llm)
 
-    # 6. Extract deduplicated sources
+    # 6. LLM enhancement (if requested and available)
+    used_llm = False
+    llm_error = ""
+    if use_llm:
+        try:
+            from research_agent.llm.enhancers import enhance_claim_support_report
+            enhanced = enhance_claim_support_report(claim, grouped, report)
+            if enhanced["used_llm"]:
+                report = enhanced["text"]
+                used_llm = True
+            if enhanced.get("error"):
+                llm_error = enhanced["error"]
+        except Exception as e:
+            llm_error = f"{type(e).__name__}: {e}"
+
+    # 7. Extract deduplicated sources
     sources = []
     seen_paths = set()
     for item in evidence:
@@ -511,4 +526,6 @@ def generate_claim_support(
         "grouped_evidence": grouped,
         "report": report,
         "sources": sources,
+        "used_llm": used_llm,
+        "llm_error": llm_error,
     }

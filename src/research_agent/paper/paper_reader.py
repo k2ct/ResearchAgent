@@ -814,6 +814,8 @@ def read_paper(path: Path, use_llm: bool = False) -> Dict[str, Any]:
         "sources": [],
         "status": "error",
         "error": "",
+        "used_llm": False,
+        "llm_error": "",
     }
 
     try:
@@ -828,7 +830,7 @@ def read_paper(path: Path, use_llm: bool = False) -> Dict[str, Any]:
         # Step 3: Extract structured metadata
         meta = extract_paper_metadata(path, raw_metadata, content)
 
-        # Step 4: Build reading note
+        # Step 4: Build rule-based reading note
         reading_note = build_structured_paper_note(
             {
                 "path": paper_data["path"],
@@ -836,8 +838,21 @@ def read_paper(path: Path, use_llm: bool = False) -> Dict[str, Any]:
                 "sections": sections,
                 "content": content,
             },
-            use_llm=use_llm,
+            use_llm=False,  # always use rule-based first
         )
+
+        # Step 5: LLM enhancement (if requested and available)
+        if use_llm:
+            try:
+                from research_agent.llm.enhancers import enhance_paper_reading_note
+                enhanced = enhance_paper_reading_note(meta, sections, reading_note)
+                if enhanced["used_llm"]:
+                    reading_note = enhanced["text"]
+                    result["used_llm"] = True
+                if enhanced.get("error"):
+                    result["llm_error"] = enhanced["error"]
+            except Exception as e:
+                result["llm_error"] = f"{type(e).__name__}: {e}"
 
         result["metadata"] = meta
         result["sections"] = {

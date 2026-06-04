@@ -2,7 +2,6 @@ import os
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
@@ -11,22 +10,44 @@ load_dotenv()
 
 def is_llm_report_writer_enabled() -> bool:
     """
-    判断是否启用 LLM Report Writer。
+    Check whether LLM Report Writer is enabled.
 
-    默认关闭，避免 GitHub demo 强依赖 API。
+    Checks BOTH the legacy ENABLE_LLM_REPORT_WRITER flag and the new
+    ENABLE_LLM_ENHANCEMENT flag. Either one can enable the writer.
+
+    Default is disabled — avoids requiring API keys for GitHub demo.
     """
+    # Legacy flag
     value = os.getenv("ENABLE_LLM_REPORT_WRITER", "false").lower()
-    return value in ["1", "true", "yes", "y"]
+    if value in ("1", "true", "yes", "y"):
+        return True
+    # New unified flag (from llm/client.py)
+    value = os.getenv("ENABLE_LLM_ENHANCEMENT", "false").lower()
+    return value in ("1", "true", "yes", "y")
 
 
-def get_report_llm() -> Optional[ChatOpenAI]:
+def get_report_llm():
     """
-    创建 Report Writer 使用的 LLM。
+    Create the LLM for Report Writer.
 
-    如果没有 OPENAI_API_KEY，则返回 None。
+    Prefers the shared client from ``research_agent.llm.client``.
+    Falls back to direct ChatOpenAI construction for backward compatibility.
+
+    Returns None if no API key is configured.
     """
+    # Try shared client first
+    try:
+        from research_agent.llm.client import get_chat_llm
+        llm = get_chat_llm()
+        if llm is not None:
+            return llm
+    except ImportError:
+        pass
+
+    # Fallback: direct ChatOpenAI construction (backward-compatible)
+    from langchain_openai import ChatOpenAI
+
     api_key = os.getenv("OPENAI_API_KEY")
-
     if not api_key:
         return None
 

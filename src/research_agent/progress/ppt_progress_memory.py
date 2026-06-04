@@ -477,7 +477,7 @@ def _build_memory_records(
 # 5. Main entry point
 # ═══════════════════════════════════════════════════════════════════════════
 
-def generate_progress_memory(path: Path) -> Dict[str, Any]:
+def generate_progress_memory(path: Path, use_llm: bool = False) -> Dict[str, Any]:
     """
     Generate a Research Progress Memory from a slide markdown file.
 
@@ -485,12 +485,16 @@ def generate_progress_memory(path: Path) -> Dict[str, Any]:
     ----------
     path : Path
         Path to a slide_doc ``.md`` file (from ingestion or hand-written).
+    use_llm : bool
+        If True, attempt LLM enhancement of the progress memory.
+        Falls back gracefully to rule-based output when LLM is unavailable.
 
     Returns
     -------
     dict
         Keys: *source_path*, *metadata*, *slides*, *topics*,
-        *progress_memory* (str), *memory_records* (list).
+        *progress_memory* (str), *memory_records* (list),
+        *used_llm* (bool), *llm_error* (str).
     """
     loaded = load_slide_markdown(path)
     metadata = loaded["metadata"]
@@ -508,6 +512,21 @@ def generate_progress_memory(path: Path) -> Dict[str, Any]:
     today = date.today().isoformat()
     memory_records = _build_memory_records(metadata, slides, topics, today)
 
+    # LLM enhancement (if requested and available)
+    used_llm = False
+    llm_error = ""
+    if use_llm:
+        try:
+            from research_agent.llm.enhancers import enhance_progress_memory as _epm
+            enhanced = _epm(metadata, slides, topics, progress_memory)
+            if enhanced["used_llm"]:
+                progress_memory = enhanced["text"]
+                used_llm = True
+            if enhanced.get("error"):
+                llm_error = enhanced["error"]
+        except Exception as e:
+            llm_error = f"{type(e).__name__}: {e}"
+
     return {
         "source_path": str(path),
         "metadata": metadata,
@@ -515,6 +534,8 @@ def generate_progress_memory(path: Path) -> Dict[str, Any]:
         "topics": topics,
         "progress_memory": progress_memory,
         "memory_records": memory_records,
+        "used_llm": used_llm,
+        "llm_error": llm_error,
     }
 
 

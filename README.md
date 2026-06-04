@@ -406,6 +406,56 @@ python scripts/ingest_documents.py --backend mineru --input raw_docs/papers_pdf/
   `MINERU_RESULT_ENDPOINT` accordingly.  When in doubt, consult the MinerU API
   documentation for your deployment.
 
+## Optional LLM Enhancement Layer
+
+ResearchAgent has a unified LLM enhancement layer that can optionally improve the
+output quality of research modules (Claim Support, Paper Reading, PPT Progress
+Memory, and Report Polish).
+
+**Default: disabled.** All modules work fully with rule-based logic without LLM.
+
+### What it enhances
+
+| Module | Rule-based (default) | LLM-enhanced |
+|---|---|---|
+| Claim Support | Template-based academic wording | Natural argumentation with source grounding |
+| Paper Reading | Section extraction + template note | Fluent structured reading note |
+| PPT Progress Memory | Heuristic topic inference | Coherent research progress summary |
+| Report Polish | Existing report as-is | Expression polishing for group meetings |
+
+### How it works
+
+1. Each module **always** generates its rule-based output first.
+2. If `ENABLE_LLM_ENHANCEMENT=true` AND `OPENAI_API_KEY` is configured, the
+   rule-based output is sent to the LLM for enhancement.
+3. The LLM is **strictly constrained**: it can only use the provided evidence /
+   content, must not fabricate conclusions, and must label missing information.
+4. If the LLM is unavailable (disabled, no key, network error), the rule-based
+   output is returned **without error**.
+
+### Configuration
+
+To enable, set these in `.env`:
+
+```env
+# Master switch
+ENABLE_LLM_ENHANCEMENT=true
+
+# API credentials (shared with other LLM features)
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+
+# Optional tuning
+LLM_TEMPERATURE=0.2
+LLM_MAX_INPUT_CHARS=12000
+```
+
+### Important notes
+
+- **API keys should never be committed to Git** (`.env` is in `.gitignore`).
+- The LLM **cannot** replace Evidence Checker, RAG retrieval, or source tracking.
+- All LLM features fail gracefully — no module breaks without an API key.
+
 ## Optional LLM-assisted Report Writer
 
 ResearchAgent 支持可选的 LLM 辅助报告生成能力。
