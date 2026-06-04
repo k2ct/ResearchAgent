@@ -463,16 +463,23 @@ def hybrid_retrieve_documents_with_scores(
     top_k: int = 5,
     vector_weight: float = 0.7,
     keyword_weight: float = 0.3,
+    use_reranker: bool = False,
 ) -> List[Tuple[Document, float]]:
     """
-    Hybrid RAG v1 主检索函数。
+    Hybrid RAG v1 main retrieval function.
 
-    流程：
+    Flow:
     1. vector_top_k = max(top_k * 2, 8)
     2. keyword_top_k = max(top_k * 2, 8)
-    3. 分别调用 vector_search_documents 和 keyword_search_documents
-    4. 调用 fuse_retrieval_results 融合
-    5. 返回 List[Tuple[Document, float]]（按 fusion score 降序）
+    3. Call vector_search_documents and keyword_search_documents
+    4. Call fuse_retrieval_results to merge
+    5. Optionally rerank with heuristic reranker
+    6. Return List[Tuple[Document, float]] sorted by fusion score descending
+
+    Parameters
+    ----------
+    use_reranker : bool
+        If True, apply heuristic reranker after fusion (default: False).
     """
     vector_top_k = max(top_k * 2, 8)
     keyword_top_k = max(top_k * 2, 8)
@@ -497,6 +504,10 @@ def hybrid_retrieve_documents_with_scores(
         keyword_weight=keyword_weight,
     )
 
+    if use_reranker:
+        from research_agent.rag.reranker import rerank_candidates
+        fused = rerank_candidates(query, fused, top_k=top_k)
+
     return fused
 
 
@@ -508,15 +519,22 @@ def hybrid_retrieve_documents(
     query: str,
     task_type: str,
     top_k: int = 5,
+    use_reranker: bool = False,
 ) -> List[Document]:
     """
-    Hybrid RAG v1 检索，只返回 Document 列表（丢弃分数）。
+    Hybrid RAG v1 retrieval, returning Document list only (no scores).
 
-    方便后续接入 retriever.py 的主流程。
+    Convenience wrapper for integration into retriever.py main flow.
+
+    Parameters
+    ----------
+    use_reranker : bool
+        If True, apply heuristic reranker after fusion (default: False).
     """
     results = hybrid_retrieve_documents_with_scores(
         query=query,
         task_type=task_type,
         top_k=top_k,
+        use_reranker=use_reranker,
     )
     return [doc for doc, _ in results]
