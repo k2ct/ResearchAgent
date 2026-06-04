@@ -38,6 +38,9 @@ tmp_test_agent_demo.txt
 .DS_Store
 Thumbs.db
 
+# Raw document ingestion inputs (private papers/materials)
+raw_docs/
+
 # Vector database
 storage/
 
@@ -51,3 +54,76 @@ notebooks/*.ipynb
 test_demo.py
 test_streamlit_min.py
 examples/
+
+# =========================
+# Local environments
+# =========================
+.conda/
+venv/
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# Jupyter notebooks / checkpoints
+# =========================
+.ipynb_checkpoints/
+notebooks/*.ipynb
+*.ipynb
+
+# =========================
+# Vector databases / local storage
+# =========================
+storage/
+chroma_db/
+*.sqlite
+*.sqlite3
+
+# =========================
+# Raw private research documents
+# =========================
+raw_docs/
+raw_data/
+datasets/
+models/
+outputs/
+
+# =========================
+# Temporary files / logs
+# =========================
+tmp_*.txt
+tmp_*.json
+tmp_*.csv
+*.log
+logs/
+
+# =========================
+# Root-level scratch test files
+# =========================
+test_demo.py
+test_streamlit_min.py
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Streamlit config
+# Keep config.toml, ignore other local Streamlit files
+# =========================
+.streamlit/*
+!.streamlit/
+!.streamlit/config.toml
