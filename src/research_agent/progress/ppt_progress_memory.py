@@ -173,19 +173,35 @@ def _extract_bullets(text: str) -> List[str]:
 # ═══════════════════════════════════════════════════════════════════════════
 
 # (keyword_patterns, category_label)
+# Patterns are matched case-insensitively against slide title + content.
+# Order matters for overlapping terms — first match wins per category per slide.
 _TOPIC_PATTERNS: List[Tuple[List[str], str]] = [
-    (["研究问题", "研究目标", "research question", "objective", "goal", "motivation",
-      "研究动机", "问题陈述", "problem statement", "要解决"], "research_questions"),
-    (["已完成", "已完成工作", "completed", "implemented", "built", "developed",
-      "实现了", "构建了", "开发了", "完成"], "completed_work"),
-    (["实验", "实验设计", "experiment", "evaluation", "benchmark", "result",
-      "metric", "指标", "结果", "测试", "test", "验证", "评估"], "experiments"),
-    (["发现", "finding", "observation", "观察到", "结果表明", "我们发现",
-      "可以看出", "可以看到", "结论"], "findings"),
-    (["问题", "limitation", "局限", "不足", "failed", "error", "错误",
-      "挑战", "challenge", "难点", "困难", "未解决"], "issues"),
-    (["下一步", "future work", "todo", "plan", "后续", "计划", "将来",
-      "接下来", "后续工作", "展望", "将会", "我们将"], "next_steps"),
+    # ── research questions ──
+    (["研究问题", "研究目标", "研究动机", "问题陈述", "要解决",
+      "research question", "research objective", "research goal",
+      "motivation", "investigate", "relationship between",
+      "this work studies", "we aim to", "our goal is",
+      "objective", "goal", "problem statement"], "research_questions"),
+    # ── completed work ──
+    (["已完成", "已完成工作", "实现了", "构建了", "开发了", "完成",
+      "completed", "implemented", "built", "constructed",
+      "collected", "created", "finished", "developed"], "completed_work"),
+    # ── experiments ──
+    (["实验", "实验设计", "指标", "结果", "测试", "验证", "评估",
+      "experiment", "evaluation", "benchmark", "metric",
+      "result", "ablation", "dataset", "test"], "experiments"),
+    # ── findings ──
+    (["发现", "观察到", "结果表明", "我们发现", "可以看出", "可以看到", "结论",
+      "finding", "observation", "shows", "indicates",
+      "reveals", "suggests", "demonstrates"], "findings"),
+    # ── issues / limitations ──
+    (["问题", "局限", "不足", "错误", "挑战", "难点", "困难", "未解决",
+      "limitation", "issue", "failure", "error", "challenge",
+      "failed", "problem"], "issues"),
+    # ── next steps ──
+    (["下一步", "后续", "计划", "将来", "接下来", "后续工作", "展望",
+      "将会", "我们将", "next step", "future work", "todo",
+      "plan", "will", "further"], "next_steps"),
 ]
 
 

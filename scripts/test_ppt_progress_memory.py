@@ -119,6 +119,74 @@ def create_sample_slide_md() -> Path:
     return out_path
 
 
+# ── English research PPT sample ───────────────────────────────────────
+
+ENGLISH_SAMPLE_SLIDES = """---
+source_type: slide_doc
+title: Bias and Hallucination in Multimodal Models
+doc_type: pptx
+original_path: raw_docs/slides_pptx/english_research_20260605.pptx
+created_from: ingestion_pipeline
+ingestion_backend: local
+tags: [slides_pptx]
+---
+
+# The relationship between bias and hallucination in MLVMs
+
+## Slide 1
+
+The relationship between bias and hallucination in MLVMs
+
+- Research question: How does bias in training data lead to hallucination in LVLMs?
+- Motivation: Existing work studies bias and hallucination separately
+- Our goal is to investigate the causal relationship between stereotype bias and object hallucination
+- We aim to build a stereotype library for controlled hallucination evaluation
+
+## Slide 2
+
+Completed Work
+
+- Completed literature review on multimodal bias evaluation
+- Built a VIGNETTE-based evaluation pipeline
+- Constructed initial stereotype library with 200+ attribute pairs
+- Collected COCO 2017 validation samples for hallucination screening
+
+## Slide 3
+
+Experiments and Results
+
+- Evaluation on COCO 2017 benchmark shows 23% extra object rate
+- Ablation study reveals that stereotype-conditioned prompts increase hallucination
+- Metric: mean_extra_object_rate, hrs_v1 for risk scoring
+- Result: male→female gender swap shows higher extra_objects than reverse
+
+## Slide 4
+
+Limitations and Issues
+
+- Limitation: COCO dataset has limited object categories
+- Challenge: open-world objects cannot be fully covered
+- Problem: SD3.5 generated images have quality artifacts in some seeds
+- Issue: current bias evaluation only covers single gender dimension
+
+## Slide 5
+
+Next Steps
+
+- Next step: expand stereotype library to intersectional attributes
+- Future work: test on more VLM architectures (LLaVA, InstructBLIP)
+- Plan: develop automated experiment report generation
+- Further investigation: cross-model comparison on hallucination patterns
+"""
+
+
+def create_english_sample_slide_md() -> Path:
+    """Create an English research PPT sample for testing. Returns the path."""
+    out_path = PROJECT_ROOT / "data" / "ingested" / "sample_english_progress_test_slides.md"
+    out_path.write_text(ENGLISH_SAMPLE_SLIDES, encoding="utf-8")
+    return out_path
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Tests
 # ═══════════════════════════════════════════════════════════════════════════
@@ -315,6 +383,37 @@ def test_no_slide_markers():
     return ok
 
 
+def test_english_research_topics():
+    section("Test 8: English research PPT — infer_progress_topics")
+    path = create_english_sample_slide_md()
+    loaded = load_slide_markdown(path)
+    slides = parse_slides_from_markdown(loaded["content"])
+    topics = infer_progress_topics(slides)
+
+    ok = True
+    ok &= check(len(topics.get("research_questions", [])) > 0,
+                f"research_questions: {len(topics.get('research_questions', []))} items (> 0 expected)")
+    ok &= check(len(topics.get("completed_work", [])) > 0,
+                f"completed_work: {len(topics.get('completed_work', []))} items (> 0 expected)")
+    ok &= check(len(topics.get("experiments", [])) > 0,
+                f"experiments: {len(topics.get('experiments', []))} items (> 0 expected)")
+    ok &= check(len(topics.get("findings", [])) > 0,
+                f"findings: {len(topics.get('findings', []))} items (> 0 expected)")
+    ok &= check(len(topics.get("issues", [])) > 0,
+                f"issues: {len(topics.get('issues', []))} items (> 0 expected)")
+    ok &= check(len(topics.get("next_steps", [])) > 0,
+                f"next_steps: {len(topics.get('next_steps', []))} items (> 0 expected)")
+
+    # Print summary
+    for cat in ["research_questions", "completed_work", "experiments", "findings", "issues", "next_steps"]:
+        items = topics.get(cat, [])
+        print(f"  [{cat}]: {len(items)} items")
+        for item in items[:3]:
+            print(f"    - {str(item)[:100]}")
+
+    return ok
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════
@@ -332,6 +431,7 @@ def main() -> int:
     results["generate"] = test_generate_progress_memory()
     results["batch"] = test_batch_generate()
     results["no_markers"] = test_no_slide_markers()
+    results["english"] = test_english_research_topics()
 
     print(f"\n{'=' * 60}")
     print("  SUMMARY")
