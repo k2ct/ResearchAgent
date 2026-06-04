@@ -1,14 +1,20 @@
 """
-Document Ingestion Pipeline v1.
+Document Ingestion Pipeline v1 with optional MinerU backend.
 
 Converts raw documents (PDF, DOCX, PPTX, MD) from raw_docs/ into
 YAML-front-matter markdown files in data/ingested/, ready for RAG indexing.
 
-v1 scope:
+Backends:
+- local (default): text extraction with pymupdf / python-docx / python-pptx
+- mineru (optional): MinerU API for complex PDFs, tables, formulas, OCR
+  Falls back to local on failure.
+
+v1 scope (local backend):
 - Text extraction only (no OCR, no image understanding, no formula parsing)
 - No LLM calls
 """
 
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -153,7 +159,15 @@ def infer_source_type(path: Path) -> str:
     return source_type
 
 
-def build_metadata(path: Path, text: str) -> Dict:
+def build_metadata(
+    path: Path,
+    text: str,
+    *,
+    ingestion_backend: str = "local",
+    mineru_used: bool = False,
+    mineru_error: str = "",
+    mineru_raw_output_path: str = "",
+) -> Dict:
     """
     Build a metadata dict for an ingested document.
 
@@ -162,15 +176,25 @@ def build_metadata(path: Path, text: str) -> Dict:
     source_type = infer_source_type(path)
     title = extract_title(text) or path.stem
 
-    return {
+    meta = {
         "source_type": source_type,
         "title": title,
         "doc_type": path.suffix.lstrip("."),
         "original_path": str(path).replace("\\", "/"),
         "created_from": "ingestion_pipeline",
+        "ingestion_backend": ingestion_backend,
         "topic": "unknown",
         "tags": [path.parent.name],
     }
+
+    if mineru_used:
+        meta["mineru_used"] = True
+    if mineru_error:
+        meta["mineru_error"] = mineru_error
+    if mineru_raw_output_path:
+        meta["mineru_raw_output_path"] = mineru_raw_output_path
+
+    return meta
 
 
 # ── Output Writer ────────────────────────────────────────────────
@@ -207,18 +231,58 @@ def write_ingested_markdown(text: str, metadata: Dict, output_path: Path) -> Non
 # ── Core Ingestion Functions ─────────────────────────────────────
 
 
-def ingest_file(path: Path, output_dir: Path) -> Dict:
+def _resolve_backend(explicit_backend: Optional[str] = None) -> str:
+    """
+    Resolve the ingestion backend.
+
+    Priority:
+    1. Explicit ``backend`` parameter passed to ingest_file / ingest_directory
+    2. ``DOCUMENT_INGESTION_BACKEND`` environment variable
+    3. Default: ``"local"``
+    """
+    if explicit_backend:
+        return explicit_backend.strip().lower()
+    return os.getenv("DOCUMENT_INGESTION_BACKEND", "local").strip().lower()
+
+
+def _extract_text_local(path: Path, suffix: str) -> str:
+    """
+    Dispatch to the correct local text extractor based on file suffix.
+    """
+    if suffix == ".pdf":
+        return extract_text_from_pdf(path)
+    elif suffix == ".docx":
+        return extract_text_from_docx(path)
+    elif suffix == ".pptx":
+        return extract_text_from_pptx(path)
+    elif suffix == ".md":
+        return extract_text_from_md(path)
+    else:
+        raise ValueError(f"Unsupported file type: {suffix}")
+
+
+def ingest_file(
+    path: Path,
+    output_dir: Path,
+    *,
+    backend: Optional[str] = None,
+) -> Dict:
     """
     Ingest a single file into the RAG pipeline.
 
     Args:
         path: Path to the source file (.pdf, .docx, .pptx, .md).
         output_dir: Directory to write the ingested .md file.
+        backend: ``"local"`` or ``"mineru"``.  Overrides the
+            ``DOCUMENT_INGESTION_BACKEND`` env var.  Defaults to ``"local"``.
 
     Returns:
         A result dict with keys: status, input_path, output_path,
-        source_type, doc_type, title, char_count, error.
+        source_type, doc_type, title, char_count, error,
+        backend, mineru_used, mineru_error, fallback.
     """
+    resolved_backend = _resolve_backend(backend)
+
     result = {
         "status": "error",
         "input_path": str(path),
@@ -228,25 +292,47 @@ def ingest_file(path: Path, output_dir: Path) -> Dict:
         "title": "",
         "char_count": 0,
         "error": "",
+        "backend": resolved_backend,
+        "mineru_used": False,
+        "mineru_error": "",
+        "fallback": False,
     }
 
     try:
         suffix = path.suffix.lower()
 
-        if suffix == ".pdf":
-            text = extract_text_from_pdf(path)
-        elif suffix == ".docx":
-            text = extract_text_from_docx(path)
-        elif suffix == ".pptx":
-            text = extract_text_from_pptx(path)
-        elif suffix == ".md":
-            text = extract_text_from_md(path)
+        # ── MinerU path ──
+        if resolved_backend == "mineru":
+            from .mineru_client import parse_document_with_mineru
+
+            mineru_result = parse_document_with_mineru(path)
+
+            if mineru_result["ok"]:
+                text = mineru_result["markdown_text"]
+                metadata = build_metadata(
+                    path, text,
+                    ingestion_backend="mineru",
+                    mineru_used=True,
+                    mineru_error="",
+                    mineru_raw_output_path=mineru_result.get("raw_output_path", ""),
+                )
+                result["mineru_used"] = True
+            else:
+                # Fallback to local extractor
+                text = _extract_text_local(path, suffix)
+                metadata = build_metadata(
+                    path, text,
+                    ingestion_backend="local",
+                    mineru_used=False,
+                    mineru_error=mineru_result.get("mineru_error", "mineru_failed"),
+                )
+                result["fallback"] = True
+                result["mineru_error"] = mineru_result.get("mineru_error", "")
         else:
-            raise ValueError(f"Unsupported file type: {suffix}")
+            text = _extract_text_local(path, suffix)
+            metadata = build_metadata(path, text, ingestion_backend="local")
 
-        metadata = build_metadata(path, text)
         output_path = output_dir / f"{path.stem}.md"
-
         write_ingested_markdown(text, metadata, output_path)
 
         result["status"] = "success"
@@ -261,7 +347,12 @@ def ingest_file(path: Path, output_dir: Path) -> Dict:
     return result
 
 
-def ingest_directory(input_dir: Path, output_dir: Path) -> List[Dict]:
+def ingest_directory(
+    input_dir: Path,
+    output_dir: Path,
+    *,
+    backend: Optional[str] = None,
+) -> List[Dict]:
     """
     Recursively scan input_dir for supported files and ingest them all.
 
@@ -285,7 +376,7 @@ def ingest_directory(input_dir: Path, output_dir: Path) -> List[Dict]:
         if path.suffix.lower() not in SUPPORTED_SUFFIXES:
             continue
 
-        result = ingest_file(path, output_dir)
+        result = ingest_file(path, output_dir, backend=backend)
         results.append(result)
 
     return results
@@ -304,15 +395,30 @@ def print_ingest_summary(results: List[Dict]) -> None:
 
     succeeded = [r for r in results if r["status"] == "success"]
     failed = [r for r in results if r["status"] != "success"]
+    fallback_count = sum(1 for r in succeeded if r.get("fallback"))
+    mineru_count = sum(1 for r in succeeded if r.get("mineru_used"))
+
+    # Detect backend from first result
+    backend = results[0].get("backend", "local") if results else "local"
 
     print(f"\nScanned: {len(results)} files")
+    print(f"  Backend: {backend}")
     print(f"  Succeeded: {len(succeeded)}")
+    if backend == "mineru":
+        print(f"    - via MinerU: {mineru_count}")
+        print(f"    - fallback to local: {fallback_count}")
     print(f"  Failed:    {len(failed)}")
 
     if succeeded:
         print(f"\n--- Succeeded ---")
         for r in succeeded:
-            print(f"  {r['source_type']:20s} {r['input_path']}")
+            tags = []
+            if r.get("mineru_used"):
+                tags.append("mineru")
+            if r.get("fallback"):
+                tags.append("fallback->local")
+            tag_str = f" [{', '.join(tags)}]" if tags else ""
+            print(f"  {r['source_type']:20s} {r['input_path']}{tag_str}")
             print(f"  {'':20s} -> {r['output_path']} ({r['char_count']} chars)")
 
     if failed:
