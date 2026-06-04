@@ -1,11 +1,14 @@
 from typing import Literal, TypedDict
 
 
-# 三类核心资料类型
+# 核心资料类型
 SOURCE_TYPE_PAPER = "paper_note"
 SOURCE_TYPE_EXPERIMENT = "experiment_doc"
 SOURCE_TYPE_DATASET = "dataset_doc"
 SOURCE_TYPE_CODE = "code_doc"
+SOURCE_TYPE_NOTE = "note_doc"
+SOURCE_TYPE_SLIDE = "slide_doc"
+SOURCE_TYPE_MISC = "misc_doc"
 
 
 SourceType = Literal[
@@ -13,6 +16,9 @@ SourceType = Literal[
     "experiment_doc",
     "dataset_doc",
     "code_doc",
+    "note_doc",
+    "slide_doc",
+    "misc_doc",
 ]
 
 
@@ -42,13 +48,22 @@ SOURCE_TYPE_TO_DIR = {
     SOURCE_TYPE_PAPER: "papers",
     SOURCE_TYPE_EXPERIMENT: "experiments",
     SOURCE_TYPE_DATASET: "datasets",
+    SOURCE_TYPE_NOTE: "notes_docx",
+    SOURCE_TYPE_SLIDE: "slides_pptx",
+    SOURCE_TYPE_MISC: "misc_md",
 }
 
 
 DIR_TO_SOURCE_TYPE = {
+    # Legacy data/ subdirs
     "papers": SOURCE_TYPE_PAPER,
     "experiments": SOURCE_TYPE_EXPERIMENT,
     "datasets": SOURCE_TYPE_DATASET,
+    # Ingestion raw_docs/ subdirs
+    "papers_pdf": SOURCE_TYPE_PAPER,
+    "notes_docx": SOURCE_TYPE_NOTE,
+    "slides_pptx": SOURCE_TYPE_SLIDE,
+    "misc_md": SOURCE_TYPE_MISC,
 }
 
 

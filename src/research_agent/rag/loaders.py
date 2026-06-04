@@ -15,18 +15,17 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 def read_text_file(path: Path) -> str:
     """
-    读取文本文件，统一使用 utf-8 编码。
+    Read a text file using utf-8 encoding.
     """
     return path.read_text(encoding="utf-8")
 
 
 def normalize_metadata_value(value: str):
     """
-    对 metadata 字段做简单类型规范化。
+    Normalize a metadata string value.
 
-    例如：
     - year: "2026" -> 2026
-    - 空字符串 -> 不保留
+    - empty string -> None (skip)
     """
     value = value.strip()
 
@@ -41,11 +40,11 @@ def normalize_metadata_value(value: str):
 
 def parse_basic_info(markdown_text: str) -> Dict:
     """
-    从 markdown 的 “## 基本信息” 部分解析 metadata。
+    Parse metadata from "## Basic Info" section in markdown.
 
-    支持这种格式：
+    Supports this format:
 
-    ## 基本信息
+    ## Basic Info
 
     - source_type: paper_note
     - title: xxx
@@ -53,12 +52,8 @@ def parse_basic_info(markdown_text: str) -> Dict:
     - year: 2026
     - path: data/papers/xxx.md
 
-    返回：
-    {
-        "source_type": "paper_note",
-        "title": "...",
-        ...
-    }
+    Returns:
+        {"source_type": "paper_note", "title": "...", ...}
     """
     metadata = {}
 
@@ -68,19 +63,19 @@ def parse_basic_info(markdown_text: str) -> Dict:
     for line in lines:
         stripped = line.strip()
 
-        # 找到基本信息段落
-        if stripped == "## 基本信息":
+        # Find the basic info section
+        if stripped == "## Basic Info" or stripped == "## 基本信息":
             in_basic_info = True
             continue
 
-        # 如果已经进入基本信息段落，遇到下一个二级标题就结束
-        if in_basic_info and stripped.startswith("## ") and stripped != "## 基本信息":
+        # Stop at next h2 heading
+        if in_basic_info and stripped.startswith("## ") and stripped != "## Basic Info" and stripped != "## 基本信息":
             break
 
         if not in_basic_info:
             continue
 
-        # 解析 "- key: value"
+        # Parse "- key: value"
         if stripped.startswith("- ") and ":" in stripped:
             item = stripped[2:]
             key, value = item.split(":", 1)
@@ -93,9 +88,62 @@ def parse_basic_info(markdown_text: str) -> Dict:
     return metadata
 
 
+def parse_front_matter(markdown_text: str) -> Dict:
+    """
+    Parse YAML front matter from the start of a markdown document.
+
+    Front matter is delimited by ``---`` on the first line and a matching
+    ``---`` on a subsequent line. Returns an empty dict if no front matter
+    is found or if the YAML is invalid.
+
+    Used by the ingestion pipeline (data/ingested/) and provides a richer
+    metadata format than the legacy ``## Basic Info`` section.
+    """
+    import yaml
+
+    lines = markdown_text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+
+    # Find closing --- delimiter
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+
+    if end_idx is None:
+        return {}
+
+    yaml_text = "\n".join(lines[1:end_idx])
+
+    try:
+        raw = yaml.safe_load(yaml_text)
+    except yaml.YAMLError:
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    metadata = {}
+    for key, value in raw.items():
+        if value is None:
+            continue
+        key_str = str(key)
+        # Normalize string values (e.g. year: "2026" -> 2026)
+        if isinstance(value, str):
+            normalized = normalize_metadata_value(value)
+            if normalized is not None:
+                metadata[key_str] = normalized
+        else:
+            metadata[key_str] = value
+
+    return metadata
+
+
 def infer_source_type_from_path(path: Path) -> Optional[str]:
     """
-    根据文件所在目录推断 source_type。
+    Infer source_type from parent directory name.
 
     data/papers/*.md      -> paper_note
     data/experiments/*.md -> experiment_doc
@@ -107,22 +155,25 @@ def infer_source_type_from_path(path: Path) -> Optional[str]:
 
 def load_markdown_document(path: Path, project_root: Path = PROJECT_ROOT) -> Document:
     """
-    加载单个 markdown 文件，返回 LangChain Document。
+    Load a single markdown file as a LangChain Document.
     """
     markdown_text = read_text_file(path)
-    metadata = parse_basic_info(markdown_text)
+    # Try YAML front matter first (ingested docs), fall back to ## Basic Info (legacy docs)
+    metadata = parse_front_matter(markdown_text)
+    if not metadata:
+        metadata = parse_basic_info(markdown_text)
 
-    # 如果文档里没有 source_type，就根据目录推断
+    # If no source_type in document, infer from directory
     if "source_type" not in metadata:
         inferred_source_type = infer_source_type_from_path(path)
         if inferred_source_type:
             metadata["source_type"] = inferred_source_type
 
-    # 如果文档里没有 path，就自动写相对路径
+    # Auto-fill path if missing
     if "path" not in metadata:
         metadata["path"] = str(path.relative_to(project_root)).replace("\\", "/")
 
-    # 如果文档里没有 title，就用一级标题或文件名
+    # Auto-fill title if missing
     if "title" not in metadata:
         metadata["title"] = extract_title(markdown_text) or path.stem
 
@@ -136,7 +187,7 @@ def load_markdown_document(path: Path, project_root: Path = PROJECT_ROOT) -> Doc
 
 def extract_title(markdown_text: str) -> Optional[str]:
     """
-    提取 markdown 第一个一级标题作为 title。
+    Extract the first H1 heading as the title.
     """
     for line in markdown_text.splitlines():
         stripped = line.strip()
@@ -147,7 +198,7 @@ def extract_title(markdown_text: str) -> Optional[str]:
 
 def validate_metadata(metadata: Dict, path: Path) -> None:
     """
-    检查必要 metadata 字段是否存在。
+    Check that required metadata keys are present and non-empty.
     """
     missing_keys = [
         key for key in REQUIRED_METADATA_KEYS
@@ -162,7 +213,7 @@ def validate_metadata(metadata: Dict, path: Path) -> None:
 
 def load_markdown_documents(directory: Path) -> List[Document]:
     """
-    加载某个目录下所有 markdown 文件。
+    Load all markdown files from a directory.
     """
     if not directory.exists():
         return []
@@ -181,11 +232,12 @@ def load_markdown_documents(directory: Path) -> List[Document]:
 
 def load_all_documents(data_dir: Path = DATA_DIR) -> List[Document]:
     """
-    加载 data/papers、data/experiments、data/datasets 下所有 markdown 文档。
+    Load all markdown documents from data/papers, data/experiments,
+    data/datasets, and data/ingested.
     """
     documents = []
 
-    for subdir in ["papers", "experiments", "datasets"]:
+    for subdir in ["papers", "experiments", "datasets", "ingested"]:
         directory = data_dir / subdir
         documents.extend(load_markdown_documents(directory))
 
@@ -194,7 +246,7 @@ def load_all_documents(data_dir: Path = DATA_DIR) -> List[Document]:
 
 def summarize_documents(documents: List[Document]) -> Dict[str, int]:
     """
-    按 source_type 统计文档数量，方便测试。
+    Count documents by source_type.
     """
     summary = {}
 
@@ -207,7 +259,7 @@ def summarize_documents(documents: List[Document]) -> Dict[str, int]:
 
 def format_document_preview(doc: Document, max_chars: int = 200) -> str:
     """
-    格式化单个 Document 的预览信息。
+    Format a human-readable preview of a Document.
     """
     content_preview = doc.page_content[:max_chars].replace("\n", " ")
 

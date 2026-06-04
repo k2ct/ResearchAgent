@@ -13,3 +13,7 @@ langchain-huggingface
 sentence-transformers
 pandas
 streamlit
+pymupdf
+python-docx
+python-pptx
+PyYAML
