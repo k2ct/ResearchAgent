@@ -710,3 +710,45 @@ def report_node(state: AgentState) -> dict:
         "tool_result_text": "",
         "result": result,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 3: Multi-Agent Router Node
+# ═══════════════════════════════════════════════════════════════════════════
+
+def multi_agent_router_node(state: AgentState) -> dict:
+    """
+    Multi-Agent orchestration node.
+
+    Activated when ``ENABLE_MULTI_AGENT=true``.
+    Runs AFTER memory retrieval and BEFORE evidence check.
+
+    1. Calls orchestrator to select primary agent + build handoff plan.
+    2. Executes handoffs using RAG docs + memory context.
+    3. Aggregates results into a combined answer.
+    4. Optionally writes to Memory Store.
+    """
+    from research_agent.agents.orchestrator import run_multi_agent_pipeline
+
+    pipeline_result = run_multi_agent_pipeline(
+        query=state["query"],
+        task_type=state["task_type"],
+        rag_docs=state.get("retrieved_docs", []),
+        rag_sources=state.get("sources", []),
+        memory_context=state.get("memory_context", ""),
+        retrieved_memories=state.get("retrieved_memories", []),
+        auto_write_memory=True,
+    )
+
+    return {
+        "multi_agent_enabled": True,
+        "primary_agent": pipeline_result.get("primary_agent", ""),
+        "handoff_plan": pipeline_result.get("handoff_plan") or {},
+        "handoff_results": pipeline_result.get("handoff_results", []),
+        "handoff_summary": pipeline_result.get("handoff_summary", ""),
+        "handoff_sources": pipeline_result.get("handoff_sources", []),
+        "handoff_memory_ids": pipeline_result.get("handoff_memory_ids", []),
+        "handoff_count": pipeline_result.get("handoff_count", 0),
+        "memory_written": pipeline_result.get("memory_written", False),
+        "memory_write_error": pipeline_result.get("memory_write_error", ""),
+    }

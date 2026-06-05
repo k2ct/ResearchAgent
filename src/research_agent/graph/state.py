@@ -45,3 +45,15 @@ class AgentState(TypedDict):
     memory_count: int
     memory_used: bool
     memory_error: str
+
+    # Phase 3: Multi-Agent fields
+    multi_agent_enabled: bool
+    primary_agent: str
+    handoff_plan: Dict[str, Any]
+    handoff_results: List[Dict]
+    handoff_summary: str
+    handoff_sources: List[Dict]
+    handoff_memory_ids: List[str]
+    handoff_count: int
+    memory_written: bool
+    memory_write_error: str

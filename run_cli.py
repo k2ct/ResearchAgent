@@ -88,6 +88,18 @@ def create_initial_state(query: str) -> dict:
         "memory_count": 0,
         "memory_used": False,
         "memory_error": "",
+
+        # Phase 3: Multi-Agent
+        "multi_agent_enabled": False,
+        "primary_agent": "",
+        "handoff_plan": {},
+        "handoff_results": [],
+        "handoff_summary": "",
+        "handoff_sources": [],
+        "handoff_memory_ids": [],
+        "handoff_count": 0,
+        "memory_written": False,
+        "memory_write_error": "",
     }
 
 
@@ -142,6 +154,24 @@ def main():
 
         print("\n===== Agent 输出 =====")
         print(result["final_answer"])
+
+        # Multi-agent metrics
+        if result.get("multi_agent_enabled"):
+            print(f"\n--- Multi-Agent ---")
+            print(f"  Primary Agent: {result.get('primary_agent', 'N/A')}")
+            print(f"  Handoffs: {result.get('handoff_count', 0)}")
+            print(f"  Summary: {result.get('handoff_summary', '')}")
+            if result.get("memory_written"):
+                print(f"  Memory: written")
+            if result.get("memory_write_error"):
+                print(f"  Memory Write Error: {result['memory_write_error']}")
+
+        # Memory metrics (always show if available)
+        if result.get("memory_used"):
+            print(f"\n--- Memory ---")
+            print(f"  Records: {result.get('memory_count', 0)}")
+        if result.get("memory_error"):
+            print(f"  Error: {result['memory_error']}")
 
 
 if __name__ == "__main__":

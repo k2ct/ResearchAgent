@@ -1,3 +1,13 @@
+"""
+LangGraph workflow for ResearchAgent.
+
+Supports two modes:
+- **Single-Agent** (default): classify → task_node → memory → evidence → answer
+- **Multi-Agent** (ENABLE_MULTI_AGENT=true): adds multi_agent_router_node
+  between memory retrieval and evidence check.
+"""
+
+import os
 
 from langgraph.graph import StateGraph, START, END
 
@@ -13,8 +23,13 @@ from .nodes import (
     final_answer_node,
     report_node,
     retrieve_memory_node,
+    multi_agent_router_node,
 )
 from .router import route_task
+
+
+def _multi_agent_enabled() -> bool:
+    return os.getenv("ENABLE_MULTI_AGENT", "false").strip().lower() == "true"
 
 
 def build_graph():
@@ -47,15 +62,19 @@ def build_graph():
         },
     )
 
-    # Each task node → memory retrieval → evidence check → final answer
-    workflow.add_edge("paper_node", "retrieve_memory")
-    workflow.add_edge("experiment_node", "retrieve_memory")
-    workflow.add_edge("dataset_node", "retrieve_memory")
-    workflow.add_edge("report_node", "retrieve_memory")
-    workflow.add_edge("code_node", "retrieve_memory")
-    workflow.add_edge("general_node", "retrieve_memory")
+    # Each task node → memory retrieval
+    for node_name in ["paper_node", "experiment_node", "dataset_node",
+                       "report_node", "code_node", "general_node"]:
+        workflow.add_edge(node_name, "retrieve_memory")
 
-    workflow.add_edge("retrieve_memory", "evidence_check")
+    # ── Conditional: multi-agent router ────────────────────────────
+    if _multi_agent_enabled():
+        workflow.add_node("multi_agent_router", multi_agent_router_node)
+        workflow.add_edge("retrieve_memory", "multi_agent_router")
+        workflow.add_edge("multi_agent_router", "evidence_check")
+    else:
+        workflow.add_edge("retrieve_memory", "evidence_check")
+
     workflow.add_edge("evidence_check", "final_answer")
     workflow.add_edge("final_answer", END)
 
