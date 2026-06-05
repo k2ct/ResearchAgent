@@ -112,6 +112,11 @@ data/memory/backups/
 data/traces/
 
 # =========================
+# Agent workspace drafts (section-level collaborative docs)
+# =========================
+data/workspaces/
+
+# =========================
 # Temporary files / logs
 # =========================
 tmp_*.txt
