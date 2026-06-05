@@ -104,6 +104,12 @@ outputs/
 data/memory/*.jsonl
 data/memory/*.md
 !data/memory/.gitkeep
+data/memory/backups/
+
+# =========================
+# Multi-agent traces
+# =========================
+data/traces/
 
 # =========================
 # Temporary files / logs
