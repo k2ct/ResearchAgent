@@ -17,8 +17,10 @@ sys.path.insert(0, str(SRC_DIR))
 
 from research_agent.memory.retriever import (
     load_memories,
+    load_memories_for_retrieval,
     retrieve_memories,
     retrieve_from_store,
+    get_retriever_backend_status,
 )
 
 # ── Build test dataset ────────────────────────────────────────────
@@ -508,6 +510,36 @@ def test_jsonl_file_roundtrip():
         tmp_path.unlink(missing_ok=True)
 
 
+def test_backend_status():
+    print("\n── Test 12: get_retriever_backend_status ──")
+
+    status = get_retriever_backend_status()
+    check(isinstance(status, dict), "status is a dict")
+    check("uses_store" in status, "status has uses_store key")
+    check("fallback_reason" in status, "status has fallback_reason key")
+    check("record_count" in status, "status has record_count key")
+
+
+def test_load_memories_for_retrieval():
+    print("\n── Test 13: load_memories_for_retrieval ──")
+
+    tmp_path = _write_temp_jsonl()
+    try:
+        # load_memories_for_retrieval should work (may use store or fallback)
+        records = load_memories_for_retrieval(jsonl_path=tmp_path)
+        # It may return 0 (if store is empty and path not hit) or 13 (if fallback hit)
+        # The point is it should not raise
+        check(isinstance(records, list), "load_memories_for_retrieval returns list")
+
+        status = get_retriever_backend_status()
+        check(isinstance(status["uses_store"], bool), "uses_store is bool")
+        print(f"  Backend: uses_store={status['uses_store']}, "
+              f"fallback_reason='{status['fallback_reason'][:60]}', "
+              f"record_count={status['record_count']}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
@@ -529,6 +561,8 @@ def main():
     test_query_combined()
     test_limit()
     test_jsonl_file_roundtrip()
+    test_backend_status()
+    test_load_memories_for_retrieval()
 
     print(f"\n{'=' * 60}")
     print(f"  Results: {PASS} passed, {FAIL} failed")

@@ -751,6 +751,280 @@ def run_consolidation(
     return results
 
 
+# ── 7. Backup ──────────────────────────────────────────────────────
+
+BACKUP_DIR = MEMORY_DIR / "backups"
+
+_FILES_TO_BACKUP = [
+    "memory_store.jsonl",
+    "long_term_memory.jsonl",
+    "mid_term_memory.jsonl",
+    "short_term_memory.jsonl",
+    "shared_memory.jsonl",
+    "memory_summary.md",
+]
+
+
+def backup_memory_store(backup_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Create a timestamped backup of all memory JSONL files and summary.
+
+    Args:
+        backup_dir: Custom backup directory.  Defaults to
+            ``data/memory/backups/YYYYMMDD_HHMMSS/``.
+
+    Returns::
+
+        {
+            "ok": bool,
+            "backup_dir": str,
+            "files_copied": [str, ...],
+            "error": str,
+        }
+    """
+    import shutil
+
+    try:
+        if backup_dir is None:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            backup_dir = BACKUP_DIR / stamp
+
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        files_copied: List[str] = []
+        for fname in _FILES_TO_BACKUP:
+            src = MEMORY_DIR / fname
+            if src.exists() and src.stat().st_size > 0:
+                dst = backup_dir / fname
+                shutil.copy2(src, dst)
+                files_copied.append(fname)
+
+        # Also copy .gitkeep if present
+        gitkeep = MEMORY_DIR / ".gitkeep"
+        if gitkeep.exists():
+            shutil.copy2(gitkeep, backup_dir / ".gitkeep", follow_symlinks=False)
+
+        return {
+            "ok": True,
+            "backup_dir": str(backup_dir),
+            "files_copied": files_copied,
+            "error": "",
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "backup_dir": str(backup_dir) if backup_dir else "",
+            "files_copied": [],
+            "error": str(e),
+        }
+
+
+# ── 8. Preview consolidation plan ──────────────────────────────────
+
+
+def preview_consolidation_plan(
+    merge_similarity: float = DEFAULT_MERGE_SIMILARITY_THRESHOLD,
+    compress_threshold: int = DEFAULT_COMPRESS_THRESHOLD,
+    compress_target: int = DEFAULT_COMPRESS_TARGET_LENGTH,
+    short_term_expiry_days: int = SHORT_TERM_EXPIRY_DAYS,
+    mid_term_expiry_days: int = MID_TERM_EXPIRY_DAYS,
+    stage_window_days: int = STAGE_WEEKLY_DAYS,
+    stage_label: str = "",
+) -> Dict[str, Any]:
+    """
+    Preview what consolidation *would* do without modifying any files.
+
+    Runs all consolidation operations in ``dry_run=True`` mode and
+    returns a summary of planned changes.
+
+    Returns::
+
+        {
+            "ok": bool,
+            "mode": "preview",
+            "duplicates_to_merge": int,
+            "long_memories_to_compress": int,
+            "memories_to_expire": int,
+            "stage_summary_records": int,
+            "estimated_changes": [
+                {"operation": str, "count": int, "details": [...]},
+                ...
+            ],
+            "error": str,
+        }
+    """
+    try:
+        plan = run_consolidation(
+            merge_similarity=merge_similarity,
+            compress_threshold=compress_threshold,
+            compress_target=compress_target,
+            short_term_expiry_days=short_term_expiry_days,
+            mid_term_expiry_days=mid_term_expiry_days,
+            stage_window_days=stage_window_days,
+            stage_label=stage_label,
+            dry_run=True,
+        )
+
+        dup_count = plan["merge_result"].get("merged_count", 0)
+        compress_count = plan["compress_result"].get("compressed_count", 0)
+        expire_count = plan["expire_result"].get("expired_count", 0)
+        stage_count = plan["stage_summary_result"].get("records_covered", 0)
+
+        estimated_changes: List[Dict[str, Any]] = []
+
+        if dup_count:
+            estimated_changes.append({
+                "operation": "merge_duplicates",
+                "count": dup_count,
+                "details": plan["merge_result"].get("merges", []),
+            })
+        if compress_count:
+            estimated_changes.append({
+                "operation": "compress_long_memories",
+                "count": compress_count,
+                "details": plan["compress_result"].get("compressed", []),
+            })
+        if expire_count:
+            estimated_changes.append({
+                "operation": "mark_expired_memories",
+                "count": expire_count,
+                "details": plan["expire_result"].get("expired", []),
+            })
+        if stage_count > 0:
+            estimated_changes.append({
+                "operation": "generate_stage_summary",
+                "count": stage_count,
+                "details": {
+                    "label": plan["stage_summary_result"].get("label", ""),
+                    "window_days": plan["stage_summary_result"].get("window_days", 0),
+                },
+            })
+
+        return {
+            "ok": True,
+            "mode": "preview",
+            "duplicates_to_merge": dup_count,
+            "long_memories_to_compress": compress_count,
+            "memories_to_expire": expire_count,
+            "stage_summary_records": stage_count,
+            "estimated_changes": estimated_changes,
+            "error": "",
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "mode": "preview",
+            "duplicates_to_merge": 0,
+            "long_memories_to_compress": 0,
+            "memories_to_expire": 0,
+            "stage_summary_records": 0,
+            "estimated_changes": [],
+            "error": str(e),
+        }
+
+
+# ── 9. Safe consolidation ──────────────────────────────────────────
+
+
+def run_consolidation_safely(
+    merge_similarity: float = DEFAULT_MERGE_SIMILARITY_THRESHOLD,
+    compress_threshold: int = DEFAULT_COMPRESS_THRESHOLD,
+    compress_target: int = DEFAULT_COMPRESS_TARGET_LENGTH,
+    short_term_expiry_days: int = SHORT_TERM_EXPIRY_DAYS,
+    mid_term_expiry_days: int = MID_TERM_EXPIRY_DAYS,
+    stage_window_days: int = STAGE_WEEKLY_DAYS,
+    stage_label: str = "",
+    apply: bool = False,
+    backup: bool = True,
+    backup_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Run consolidation with safety guarantees.
+
+    - **apply=False** (default): dry-run only.  Returns a preview plan.
+      NO files are modified.
+    - **apply=True**: backs up first (unless ``backup=False``), then
+      executes all consolidation operations.
+
+    Args:
+        apply: Must be explicitly ``True`` to modify any files.
+        backup: If ``True`` (default), create a timestamped backup before
+            applying changes.
+        backup_dir: Custom backup directory (passed to :func:`backup_memory_store`).
+        (all other args are passed through to :func:`run_consolidation`)
+
+    Returns::
+
+        {
+            "ok": bool,
+            "mode": "dry_run" | "apply",
+            "backup_result": {...} | None,
+            "preview": {...},
+            "consolidation_result": {...} | None,
+            "error": str,
+        }
+    """
+    result: Dict[str, Any] = {
+        "ok": True,
+        "mode": "apply" if apply else "dry_run",
+        "backup_result": None,
+        "preview": {},
+        "consolidation_result": None,
+        "error": "",
+    }
+
+    try:
+        # Always generate a preview first
+        preview = preview_consolidation_plan(
+            merge_similarity=merge_similarity,
+            compress_threshold=compress_threshold,
+            compress_target=compress_target,
+            short_term_expiry_days=short_term_expiry_days,
+            mid_term_expiry_days=mid_term_expiry_days,
+            stage_window_days=stage_window_days,
+            stage_label=stage_label,
+        )
+        result["preview"] = preview
+
+        # If not applying, stop here
+        if not apply:
+            return result
+
+        # ── Apply path ────────────────────────────────────────────
+        # Backup first
+        if backup:
+            bk_result = backup_memory_store(backup_dir)
+            result["backup_result"] = bk_result
+            if not bk_result["ok"]:
+                result["ok"] = False
+                result["error"] = f"Backup failed: {bk_result['error']}"
+                return result
+
+        # Execute consolidation
+        consolidation_result = run_consolidation(
+            merge_similarity=merge_similarity,
+            compress_threshold=compress_threshold,
+            compress_target=compress_target,
+            short_term_expiry_days=short_term_expiry_days,
+            mid_term_expiry_days=mid_term_expiry_days,
+            stage_window_days=stage_window_days,
+            stage_label=stage_label,
+            dry_run=False,
+        )
+        result["consolidation_result"] = consolidation_result
+        if not consolidation_result.get("ok"):
+            result["ok"] = False
+
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        result["ok"] = False
+        return result
+
+
 # ── Helpers from collections (import here to avoid circular imports) ──
 
 from collections import Counter  # noqa: E402

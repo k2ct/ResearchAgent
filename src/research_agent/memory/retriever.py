@@ -1,28 +1,58 @@
 """
-Memory Retriever v1 — multi-dimensional search over JSONL memory store.
+Memory Retriever v2 — multi-dimensional search over memory records.
 
-Reads memory records from one or more JSONL files and supports
-filtering by type, tags, source module, time range, keyword,
-memory level, agent role, importance, and status.
+Reads memory records through the Memory Store (:mod:`research_agent.memory.store`)
+as the primary backend. Falls back to direct JSONL file reading if the store
+module is unavailable.
 
-Independent module — does not modify schema.py, store logic,
-LangGraph workflow, or the application layer.
+Retrieval supports filtering by type, tags, source module, time range,
+keyword, memory level, agent role, importance, and status.
+
+Backward-compatible with v1 — all existing function signatures and
+return types are preserved.
 """
 
 from __future__ import annotations
 
 import json
+import sys as _sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 
-# ── 1. Load ───────────────────────────────────────────────────────
+# ── Internal backend state ─────────────────────────────────────────
+
+_backend_state: Dict = {
+    "uses_store": False,
+    "fallback_reason": "",
+    "record_count": 0,
+}
+
+
+def get_retriever_backend_status() -> Dict:
+    """
+    Return the current retriever backend status.
+
+    Useful for debugging and integration tests::
+
+        >>> status = get_retriever_backend_status()
+        >>> print(status["uses_store"])   # True if store is active
+        >>> print(status["fallback_reason"])
+        >>> print(status["record_count"])
+    """
+    return dict(_backend_state)
+
+
+# ── 1. Load (primary: store, fallback: direct JSONL) ───────────────
 
 
 def load_memories(jsonl_path: str | Path) -> List[Dict]:
     """
-    Load all memory records from a JSONL file.
+    Load all memory records from a single JSONL file on disk.
+
+    This is the **direct file reader** — it does NOT go through the store.
+    Use ``load_memories_for_retrieval()`` for the store-backed path.
 
     Each line must be a valid JSON object. Malformed lines are
     skipped with a warning printed to stderr.
@@ -45,11 +75,10 @@ def load_memories(jsonl_path: str | Path) -> List[Dict]:
                 if isinstance(record, dict):
                     records.append(record)
             except json.JSONDecodeError:
-                import sys
                 print(
                     f"[memory_retriever] skipping malformed JSONL "
                     f"line {line_no} in {jsonl_path}",
-                    file=sys.stderr,
+                    file=_sys.stderr,
                 )
 
     return records
@@ -60,6 +89,7 @@ def load_memories_from_dir(dir_path: str | Path) -> List[Dict]:
     Load all memory records from all ``*.jsonl`` files in a directory.
 
     Files are processed in sorted order for deterministic results.
+    Direct file reader — does not go through the store.
     """
     directory = Path(dir_path)
     if not directory.is_dir():
@@ -72,6 +102,62 @@ def load_memories_from_dir(dir_path: str | Path) -> List[Dict]:
     return all_records
 
 
+def load_memories_for_retrieval(
+    jsonl_path: Optional[str | Path] = None,
+    prefer_store: bool = True,
+) -> List[Dict]:
+    """
+    Load all memory records, preferring the Memory Store backend.
+
+    Priority order:
+    1. If ``jsonl_path`` is explicitly provided AND the file exists,
+       load from that path directly (used for standalone/test scenarios).
+    2. If ``prefer_store=True``, try ``research_agent.memory.store.load_memories()``.
+    3. Fall back to the default store path ``data/memory/memory_store.jsonl``.
+
+    Updates ``get_retriever_backend_status()`` with the outcome.
+    """
+    # --- Explicit path (test / standalone) ---
+    if jsonl_path is not None:
+        explicit = Path(jsonl_path)
+        if explicit.exists():
+            records = load_memories(explicit)
+            _backend_state["uses_store"] = False
+            _backend_state["fallback_reason"] = "explicit jsonl_path provided"
+            _backend_state["record_count"] = len(records)
+            return records
+
+    # --- Try store.load_memories() ---
+    if prefer_store:
+        try:
+            from research_agent.memory.store import load_memories as _store_load
+
+            records = _store_load()
+            _backend_state["uses_store"] = True
+            _backend_state["fallback_reason"] = ""
+            _backend_state["record_count"] = len(records)
+            return records
+
+        except ImportError as e:
+            _backend_state["uses_store"] = False
+            _backend_state["fallback_reason"] = f"ImportError: {e}"
+        except Exception as e:
+            _backend_state["uses_store"] = False
+            _backend_state["fallback_reason"] = f"{type(e).__name__}: {e}"
+
+    # --- Fallback: default store path ---
+    try:
+        project_root = Path(__file__).resolve().parents[3]
+        default_store = project_root / "data" / "memory" / "memory_store.jsonl"
+        records = load_memories(default_store)
+        _backend_state["record_count"] = len(records)
+        return records
+    except Exception as e:
+        _backend_state["fallback_reason"] += f" | Default path failed: {e}"
+        _backend_state["record_count"] = 0
+        return []
+
+
 # ── 2. Filter predicates ──────────────────────────────────────────
 
 
@@ -80,7 +166,6 @@ def _parse_iso_datetime(value: str) -> Optional[datetime]:
     if not value:
         return None
     try:
-        # Handle both 'Z' suffix and '+00:00' offset
         s = value.replace("Z", "+00:00")
         return datetime.fromisoformat(s)
     except (ValueError, TypeError):
@@ -143,7 +228,8 @@ def retrieve_memories(
     Parameters
     ----------
     records : List[Dict]
-        Pre-loaded memory records (from ``load_memories``).
+        Pre-loaded memory records (from ``load_memories`` or
+        ``load_memories_for_retrieval``).
     memory_type : str, optional
         Exact match on ``memory_type`` field.
     memory_level : str, optional
@@ -180,7 +266,6 @@ def retrieve_memories(
     List[Dict]
         Matching records, preserving original order among matches.
     """
-    # Pre-parse time filters so we don't repeat inside the loop
     ca = _parse_iso_datetime(created_after) if created_after else None
     cb = _parse_iso_datetime(created_before) if created_before else None
     ua = _parse_iso_datetime(updated_after) if updated_after else None
@@ -189,7 +274,6 @@ def retrieve_memories(
     results: List[Dict] = []
 
     for rec in records:
-        # --- exact-match filters ---
         if memory_type is not None and rec.get("memory_type") != memory_type:
             continue
         if memory_level is not None and rec.get("memory_level") != memory_level:
@@ -203,15 +287,12 @@ def retrieve_memories(
         if status is not None and rec.get("status") != status:
             continue
 
-        # --- tags (OR) ---
         if tags and not _match_tag_any(rec, tags):
             continue
 
-        # --- keyword ---
         if keyword and not _match_keyword(rec, keyword):
             continue
 
-        # --- time range ---
         if ca is not None:
             ct = _parse_iso_datetime(rec.get("created_at", ""))
             if ct is None or ct < ca:
@@ -229,7 +310,6 @@ def retrieve_memories(
             if ut is None or ut > ub:
                 continue
 
-        # --- importance range ---
         imp = rec.get("importance", 3)
         if importance_min is not None and imp < importance_min:
             continue
@@ -248,7 +328,7 @@ def retrieve_memories(
 
 
 def retrieve_from_store(
-    jsonl_path: str | Path,
+    jsonl_path: Optional[str | Path] = None,
     *,
     memory_type: Optional[str] = None,
     memory_level: Optional[str] = None,
@@ -267,11 +347,18 @@ def retrieve_from_store(
     limit: Optional[int] = None,
 ) -> List[Dict]:
     """
-    Load records from a JSONL file and retrieve matching entries.
+    Load records via the store (or fallback) and retrieve matching entries.
 
-    Convenience wrapper around ``load_memories`` + ``retrieve_memories``.
+    If ``jsonl_path`` is provided and the file exists, reads from that file
+    directly (useful for standalone test scenarios).  Otherwise delegates
+    to ``load_memories_for_retrieval`` (which prefers ``store.load_memories()``).
+
+    This is the recommended entry point for most callers.
     """
-    records = load_memories(jsonl_path)
+    records = load_memories_for_retrieval(
+        jsonl_path=jsonl_path,
+        prefer_store=(jsonl_path is None),  # only prefer store when no explicit path
+    )
     return retrieve_memories(
         records,
         memory_type=memory_type,

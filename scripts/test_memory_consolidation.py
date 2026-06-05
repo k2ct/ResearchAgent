@@ -440,6 +440,188 @@ def test_dry_run_safety():
         check(True, "all record statuses still active after dry_run")
 
 
+# ── Test 9: backup_memory_store ─────────────────────────────────
+
+
+def test_backup():
+    section("Test 9: backup_memory_store()")
+
+    # Import the backup function
+    from research_agent.memory.consolidation import backup_memory_store
+
+    result = backup_memory_store()
+    check(result["ok"], f"backup ok: {result['ok']}")
+    check(len(result["files_copied"]) >= 1,
+          f"at least 1 file copied (got {len(result['files_copied'])})")
+    check("backup_dir" in result, "backup_dir in result")
+
+    backup_path = Path(result["backup_dir"])
+    check(backup_path.exists(), f"backup dir exists: {backup_path}")
+
+    # Verify copied files
+    for fname in result["files_copied"]:
+        copied = backup_path / fname
+        check(copied.exists(), f"  {fname} exists in backup")
+
+    print(f"  Backup dir: {backup_path}")
+    print(f"  Files: {result['files_copied']}")
+
+
+# ── Test 10: preview_consolidation_plan ──────────────────────────
+
+
+def test_preview_plan():
+    section("Test 10: preview_consolidation_plan()")
+
+    from research_agent.memory.consolidation import preview_consolidation_plan
+
+    # Count records before
+    records_before = load_memories()
+    count_before = len(records_before)
+
+    plan = preview_consolidation_plan(
+        merge_similarity=0.50,
+        compress_threshold=3000,
+        short_term_expiry_days=7,
+        mid_term_expiry_days=60,
+        stage_window_days=30,
+    )
+
+    check(plan["ok"], f"preview ok: {plan['ok']}")
+    check(plan["mode"] == "preview", f"mode=preview: {plan['mode']}")
+    check("duplicates_to_merge" in plan, "has duplicates_to_merge")
+    check("long_memories_to_compress" in plan, "has long_memories_to_compress")
+    check("memories_to_expire" in plan, "has memories_to_expire")
+    check("estimated_changes" in plan, "has estimated_changes")
+
+    # Verify NO files were modified
+    records_after = load_memories()
+    count_after = len(records_after)
+    check(count_before == count_after,
+          f"record count unchanged after preview: {count_before} → {count_after}")
+
+    print(f"  Duplicates to merge: {plan['duplicates_to_merge']}")
+    print(f"  Long mems to compress: {plan['long_memories_to_compress']}")
+    print(f"  Memories to expire: {plan['memories_to_expire']}")
+    print(f"  Stage records: {plan['stage_summary_records']}")
+
+
+# ── Test 11: run_consolidation_safely(apply=False) ───────────────
+
+
+def test_safe_dry_run():
+    section("Test 11: run_consolidation_safely(apply=False)")
+
+    from research_agent.memory.consolidation import run_consolidation_safely
+
+    records_before = load_memories()
+    count_before = len(records_before)
+
+    result = run_consolidation_safely(
+        merge_similarity=0.50,
+        compress_threshold=3000,
+        short_term_expiry_days=7,
+        mid_term_expiry_days=60,
+        stage_window_days=7,
+        apply=False,  # explicitly dry-run
+    )
+
+    check(result["ok"], f"ok: {result['ok']}")
+    check(result["mode"] == "dry_run", f"mode=dry_run: {result['mode']}")
+    check(result["consolidation_result"] is None,
+          "consolidation_result is None (not applied)")
+    check("preview" in result, "has preview")
+
+    # Verify NO files modified
+    records_after = load_memories()
+    check(len(records_before) == len(records_after),
+          f"record count unchanged ({count_before})")
+
+    print(f"  Mode: {result['mode']}")
+
+
+# ── Test 12: run_consolidation_safely(apply=True) ────────────────
+
+
+def test_safe_apply():
+    section("Test 12: run_consolidation_safely(apply=True, backup=True)")
+
+    from research_agent.memory.consolidation import run_consolidation_safely
+
+    seed_test_memories()
+
+    result = run_consolidation_safely(
+        merge_similarity=0.50,
+        compress_threshold=3000,
+        short_term_expiry_days=7,
+        mid_term_expiry_days=60,
+        stage_window_days=7,
+        stage_label="Weekly",
+        apply=True,
+        backup=True,
+    )
+
+    check(result["ok"], f"ok: {result['ok']}")
+    check(result["mode"] == "apply", f"mode=apply: {result['mode']}")
+
+    # Backup must have run
+    bk = result.get("backup_result")
+    check(bk is not None, "backup_result is not None")
+    if bk:
+        check(bk["ok"], f"backup ok: {bk['ok']}")
+        check(len(bk["files_copied"]) >= 1,
+              f"backup copied >=1 files ({len(bk['files_copied'])})")
+        print(f"  Backup: {bk['backup_dir']}")
+        print(f"  Files: {bk['files_copied']}")
+
+    # Consolidation must have run
+    cons = result.get("consolidation_result")
+    check(cons is not None, "consolidation_result is not None")
+    if cons:
+        check(cons.get("dry_run") == False,
+              "consolidation dry_run=False")
+
+    print(f"  Merge count: {cons.get('merge_result', {}).get('merged_count', '?')}")
+    print(f"  Compress count: {cons.get('compress_result', {}).get('compressed_count', '?')}")
+    print(f"  Expire count: {cons.get('expire_result', {}).get('expired_count', '?')}")
+
+
+# ── Test 13: CLI dry-run (via subprocess) ────────────────────────
+
+
+def test_cli_dry_run():
+    section("Test 13: CLI — default dry-run via subprocess")
+
+    import subprocess
+
+    python_exe = PROJECT_ROOT / ".conda" / "python.exe"
+    script = PROJECT_ROOT / "scripts" / "run_memory_consolidation.py"
+
+    result = subprocess.run(
+        [str(python_exe), str(script), "--expire", "--weekly"],
+        capture_output=True,
+        text=True,
+        cwd=str(PROJECT_ROOT),
+        timeout=30,
+    )
+
+    output = result.stdout + result.stderr
+
+    check(result.returncode == 0, f"CLI exits 0 (got {result.returncode})")
+    check("This is a dry run" in output or "DRY RUN" in output,
+          "output contains dry-run notice")
+    check("No files were modified" in output or "No files" in output,
+          "output confirms no files modified")
+    check("--apply" in output,
+          "output mentions --apply flag")
+
+    print(f"  CLI return code: {result.returncode}")
+    # Show a few key lines
+    for line in output.splitlines():
+        if "dry run" in line.lower() or "apply" in line.lower() or "Duplicates" in line:
+            print(f"    {line.strip()}")
+
+
 # ── Cleanup ───────────────────────────────────────────────────────
 
 
@@ -471,6 +653,11 @@ def main():
     test_stage_summary_monthly()
     test_run_consolidation()
     test_dry_run_safety()
+    test_backup()
+    test_preview_plan()
+    test_safe_dry_run()
+    test_safe_apply()
+    test_cli_dry_run()
 
     cleanup()
     update_memory_summary()

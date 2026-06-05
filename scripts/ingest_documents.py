@@ -3,11 +3,17 @@ Document Ingestion CLI.
 
 Usage::
 
-    # Ingest all files from raw_docs/ into data/ingested/
+    # Ingest all files from raw_docs/ into data/ingested/ (local backend)
     python scripts/ingest_documents.py
 
     # Specify custom paths
     python scripts/ingest_documents.py --input raw_docs/papers_pdf --output data/ingested
+
+    # Use MinerU backend (falls back to local on failure)
+    python scripts/ingest_documents.py --backend mineru
+
+    # Force local backend
+    python scripts/ingest_documents.py --backend local
 """
 
 import argparse
@@ -41,6 +47,14 @@ def main():
         default="data/ingested",
         help="Output directory for ingested markdown (default: data/ingested)",
     )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default=None,
+        choices=["local", "mineru"],
+        help="Ingestion backend: local (default) or mineru (optional). "
+             "Overrides DOCUMENT_INGESTION_BACKEND env var.",
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -54,10 +68,10 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if input_path.is_file():
-        result = ingest_file(input_path, output_dir)
+        result = ingest_file(input_path, output_dir, backend=args.backend)
         print_ingest_summary([result])
     elif input_path.is_dir():
-        results = ingest_directory(input_path, output_dir)
+        results = ingest_directory(input_path, output_dir, backend=args.backend)
         print_ingest_summary(results)
     else:
         print(f"Error: input path does not exist: {input_path}")
