@@ -20,7 +20,10 @@ if sys.stdout.encoding != "utf-8":
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
+sys.path.insert(0, str(PROJECT_ROOT))
 
+# Force HuggingFace offline (models must be pre-cached via build_index.py)
+os.environ["HF_HUB_OFFLINE"] = "1"
 # Enable multi-agent for this test
 os.environ["ENABLE_MULTI_AGENT"] = "true"
 
