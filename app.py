@@ -48,6 +48,18 @@ def create_initial_state(query: str) -> dict:
         "memory_count": 0,
         "memory_used": False,
         "memory_error": "",
+
+        # Phase 3: Multi-Agent
+        "multi_agent_enabled": False,
+        "primary_agent": "",
+        "handoff_plan": {},
+        "handoff_results": [],
+        "handoff_summary": "",
+        "handoff_sources": [],
+        "handoff_memory_ids": [],
+        "handoff_count": 0,
+        "memory_written": False,
+        "memory_write_error": "",
     }
 
 
@@ -100,6 +112,19 @@ st.sidebar.markdown(
 - Sources display
 """
 )
+
+st.sidebar.markdown("---")
+
+# ── Config status ────────────────────────────────────────────────
+st.sidebar.markdown("### ⚙️ 运行模式")
+import os
+col_a, col_b = st.sidebar.columns(2)
+with col_a:
+    multi_agent = os.getenv("ENABLE_MULTI_AGENT", "false").strip().lower() == "true"
+    st.metric("Multi-Agent", "✅ ON" if multi_agent else "⬜ OFF")
+with col_b:
+    memory_aware = os.getenv("ENABLE_MEMORY_AWARE_AGENT", "false").strip().lower() == "true"
+    st.metric("Memory-Aware", "✅ ON" if memory_aware else "⬜ OFF")
 
 st.sidebar.markdown("---")
 
@@ -162,7 +187,7 @@ if run_button:
         # Summary cards
         # -------------------------
 
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
 
         with col1:
             st.metric("任务类型", result.get("task_type", "unknown"))
@@ -177,7 +202,17 @@ if run_button:
             st.metric("Sources", len(result.get("sources", [])))
 
         with col5:
-            st.metric("Memory", result.get("memory_count", 0))
+            mem_label = f"{result.get('memory_count', 0)}"
+            if result.get("memory_written"):
+                mem_label += " ✏️"
+            st.metric("Memory", mem_label)
+
+        with col6:
+            ho_count = result.get("handoff_count", 0)
+            ho_label = str(ho_count)
+            if ho_count > 0 and result.get("handoff_summary"):
+                ho_label += " 🔄"
+            st.metric("Handoffs", ho_label)
 
         st.markdown("---")
 
@@ -282,12 +317,62 @@ if run_button:
                         st.write("**Tags:**", tag_str)
 
         # -------------------------
+        # Multi-Agent / Handoff
+        # -------------------------
+
+        handoff_count = result.get("handoff_count", 0)
+        handoff_summary = result.get("handoff_summary", "")
+        primary_agent = result.get("primary_agent", "")
+
+        if handoff_count > 0 or primary_agent:
+            st.markdown("---")
+            st.subheader("🤝 Multi-Agent / Handoff")
+
+            if primary_agent:
+                st.write(f"**Primary Agent**: {primary_agent}")
+            if handoff_summary:
+                st.info(handoff_summary)
+
+            handoff_results = result.get("handoff_results", [])
+            if handoff_results:
+                for i, hr in enumerate(handoff_results[:8], start=1):
+                    if isinstance(hr, dict):
+                        label = f"{i}. {hr.get('to_agent', '?')} — {hr.get('status', '?')} (conf={hr.get('confidence', 0):.2f})"
+                        with st.expander(label):
+                            st.write("**Result**:", str(hr.get("result_text", ""))[:500])
+                            st.write("**Sources count**:", hr.get("sources_count", 0))
+                    else:
+                        st.write(f"{i}. {str(hr)[:200]}")
+
+            # Coordinator summary
+            coord_summary = result.get("coordinator_summary", "")
+            if coord_summary:
+                with st.expander("📋 Coordinator Final Arbitration"):
+                    st.markdown(coord_summary)
+
+            # Arbitration
+            arbitration = result.get("arbitration")
+            if arbitration and isinstance(arbitration, dict):
+                conflicts = arbitration.get("conflicts", {})
+                if conflicts.get("has_conflict"):
+                    st.warning(f"⚠️ Conflicts detected: {', '.join(conflicts.get('conflict_types', []))}")
+
+        # -------------------------
+        # Memory Write-back
+        # -------------------------
+
+        if result.get("memory_written"):
+            st.success("📝 Memory write-back: OK")
+        if result.get("memory_write_error"):
+            st.warning(f"Memory write-back error: {result['memory_write_error']}")
+
+        # -------------------------
         # Debug
         # -------------------------
 
         if show_debug:
             st.markdown("---")
-            st.subheader("Debug State")
+            st.subheader("🔍 Debug State")
 
             with st.expander("查看完整 AgentState"):
                 st.json(result)
@@ -300,3 +385,14 @@ if run_button:
 
             with st.expander("查看 retrieved_memories"):
                 st.json(result.get("retrieved_memories", []))
+
+            if handoff_count > 0:
+                with st.expander("查看 handoff_results (raw)"):
+                    st.json(result.get("handoff_results", []))
+
+                with st.expander("查看 handoff_plan"):
+                    st.json(result.get("handoff_plan", {}))
+
+            if result.get("arbitration"):
+                with st.expander("查看 arbitration"):
+                    st.json(result.get("arbitration", {}))
