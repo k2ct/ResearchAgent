@@ -16,6 +16,7 @@ _PROFILES_OK = False
 _HANDOFF_OK = False
 _MEMORY_OK = False
 _ADAPTERS_OK = False
+_EXECUTORS_OK = False
 
 try:
     from research_agent.agents.profiles import select_agent_for_task, get_agent_profile  # type: ignore
@@ -44,6 +45,12 @@ except ImportError:
 try:
     from research_agent.memory.adapters import save_module_result  # type: ignore
     _ADAPTERS_OK = True
+except ImportError:
+    pass
+
+try:
+    from research_agent.agents.executors import execute_handoff_request  # type: ignore
+    _EXECUTORS_OK = True
 except ImportError:
     pass
 
@@ -150,6 +157,25 @@ def run_multi_agent_pipeline(
         f"{total} handoffs ({completed} completed, {failed} failed)"
     )
 
+    # ── 4.5. Arbitration (conflict detection + coordinator summary) ──
+    result["arbitration"] = None
+    result["coordinator_summary"] = ""
+    try:
+        from research_agent.agents.arbitration import (
+            arbitrate_results, build_coordinator_final_summary,
+        )
+        arb = arbitrate_results(handoff_results, root_query=query)
+        result["arbitration"] = arb
+        if arb.get("conflicts", {}).get("has_conflict"):
+            summary = build_coordinator_final_summary(arb, handoff_results, root_query=query)
+            result["coordinator_summary"] = summary
+            # Append to combined answer
+            result["combined_answer"] += (
+                "\n\n## Coordinator Arbitration\n\n" + arb.get("arbitration_text", "")
+            )
+    except Exception:
+        pass  # arbitration failure must not affect main result
+
     # ── 5. Write to Memory Store ───────────────────────────────────
     if auto_write_memory and _ADAPTERS_OK and completed > 0:
         try:
@@ -170,6 +196,21 @@ def run_multi_agent_pipeline(
         except Exception as e:
             result["memory_write_error"] = str(e)
 
+    # ── 6. Optional trace ────────────────────────────────────────────
+    try:
+        from research_agent.agents.tracing import trace_and_evaluate
+        trace_eval = trace_and_evaluate(
+            orchestrator_result=result,
+            query=query,
+            task_type=task_type,
+            save_trace=True,
+        )
+        result["trace"] = trace_eval.get("trace")
+        result["trace_quality"] = trace_eval.get("quality")
+    except Exception:
+        result["trace"] = None
+        result["trace_quality"] = None
+
     return result
 
 
@@ -185,31 +226,65 @@ def _execute_handoffs(
     retrieved_memories: List[Dict[str, Any]],
 ) -> List[Any]:
     """
-    Simulate execution of a handoff plan.
+    Execute a handoff plan using real specialist executors when available.
 
-    Each handoff request gets a result built from:
-    - Matching RAG docs filtered by agent domain
-    - Matching memory records filtered by agent domain
-    - A templated result_text describing what was found
+    Falls back to simulated execution if ``executors.py`` is unavailable.
+    Each handoff is processed independently — one failure does not stop the batch.
+    """
+    # ── Try real executors first ──────────────────────────────────
+    if _EXECUTORS_OK:
+        results: List[Any] = []
+        for h in plan.handoffs:
+            try:
+                result = execute_handoff_request(
+                    request=h,
+                    rag_docs=rag_docs,
+                    memories=retrieved_memories,
+                    use_llm=False,
+                    save_memory=False,
+                )
+                results.append(result)
+            except Exception as e:
+                from datetime import datetime, timezone
+                results.append(HandoffResult(
+                    handoff_id=getattr(h, "handoff_id", ""),
+                    from_agent=getattr(h, "from_agent", ""),
+                    to_agent=getattr(h, "to_agent", ""),
+                    status="failed",
+                    result_text="",
+                    confidence=0.0,
+                    sources=[],
+                    memory_ids=[],
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    error=f"{type(e).__name__}: {e}",
+                ))
+        return results
+
+    # ── Fallback: simulated execution ─────────────────────────────
+    return _execute_handoffs_simulated(
+        plan=plan,
+        rag_docs=rag_docs,
+        retrieved_memories=retrieved_memories,
+    )
+
+
+def _execute_handoffs_simulated(
+    plan: Any,
+    rag_docs: List[Dict[str, Any]],
+    retrieved_memories: List[Dict[str, Any]],
+) -> List[Any]:
+    """
+    Simulated handoff execution — used when executors.py is unavailable.
     """
     from research_agent.agents.handoff import HandoffResult
     from datetime import datetime, timezone
 
     results: List[Any] = []
-
-    # Map agents to RAG source_type filters
-    _AGENT_RAG_FILTERS: Dict[str, str] = {
-        "paper_agent": "paper_note",
-        "experiment_agent": "experiment_doc",
-        "claim_agent": "paper_note",
-        "progress_agent": "slide_doc",
-        "report_agent": None,
-        "code_agent": None,
-        "memory_agent": None,
-        "general_agent": None,
+    _AGENT_RAG_FILTERS: Dict[str, Optional[str]] = {
+        "paper_agent": "paper_note", "experiment_agent": "experiment_doc",
+        "claim_agent": "paper_note", "progress_agent": "slide_doc",
+        "report_agent": None, "code_agent": None, "memory_agent": None, "general_agent": None,
     }
-
-    # Map agents to memory_type filters
     _AGENT_MEMORY_FILTERS: Dict[str, List[str]] = {
         "paper_agent": ["paper_note", "claim_support", "research_direction"],
         "experiment_agent": ["experiment_result", "progress_update"],
@@ -224,27 +299,15 @@ def _execute_handoffs(
     for h in plan.handoffs:
         agent = h.to_agent
         now = datetime.now(timezone.utc).isoformat()
-
-        # Filter RAG docs
         rag_filter = _AGENT_RAG_FILTERS.get(agent)
-        agent_rag = [
-            d for d in rag_docs
-            if rag_filter is None or d.get("metadata", {}).get("source_type") == rag_filter
-        ] if rag_docs else []
-
-        # Filter memory records
+        agent_rag = [d for d in rag_docs if rag_filter is None
+                     or d.get("metadata", {}).get("source_type") == rag_filter] if rag_docs else []
         mem_types = _AGENT_MEMORY_FILTERS.get(agent, [])
-        agent_mem = [
-            m for m in retrieved_memories
-            if _rf(m, "memory_type", "") in mem_types
-        ] if retrieved_memories and mem_types else []
+        agent_mem = [m for m in retrieved_memories if _rf(m, "memory_type", "") in mem_types
+                     ] if retrieved_memories and mem_types else []
 
-        # Build simulated result text
-        lines = [f"## {_agent_label(agent)} Output", ""]
-        lines.append(f"**Task**: {h.task}")
-        lines.append(f"**Query**: {h.input_text[:200]}")
-        lines.append("")
-
+        lines = [f"## {_agent_label(agent)} Output [simulated]", "",
+                 f"**Task**: {h.task}", f"**Query**: {h.input_text[:200]}", ""]
         if agent_rag:
             lines.append(f"**RAG documents found**: {len(agent_rag)}")
             for d in agent_rag[:3]:
@@ -252,38 +315,24 @@ def _execute_handoffs(
                 title = d.get("metadata", {}).get("title", "")
                 lines.append(f"- {title} (`{path}`)")
             lines.append("")
-
         if agent_mem:
             lines.append(f"**Memory records found**: {len(agent_mem)}")
             for m in agent_mem[:3]:
-                mid = _rf(m, "memory_id", "?")
-                summary = _rf(m, "summary", "")[:80]
-                lines.append(f"- [{mid[:12]}...] {summary}")
+                lines.append(f"- [{_rf(m, 'memory_id', '?')[:12]}...] {_rf(m, 'summary', '')[:80]}")
             lines.append("")
-
         if not agent_rag and not agent_mem:
-            lines.append("*(No specific RAG documents or memory records found for this agent.)*")
-            lines.append("")
-
-        result_text = "\n".join(lines)
-        confidence = 0.7 if (agent_rag or agent_mem) else 0.3
+            lines.append("*(No specific RAG documents or memory records found.)*\n")
 
         results.append(HandoffResult(
-            handoff_id=h.handoff_id,
-            from_agent=h.from_agent,
-            to_agent=agent,
-            status="completed" if (agent_rag or agent_mem) else "completed",
-            result_text=result_text,
-            confidence=confidence,
-            sources=[
-                {"path": d.get("metadata", {}).get("path", ""),
-                 "source_type": d.get("metadata", {}).get("source_type", "")}
-                for d in agent_rag[:5]
-            ],
+            handoff_id=h.handoff_id, from_agent=h.from_agent, to_agent=agent,
+            status="completed", result_text="\n".join(lines),
+            confidence=0.7 if (agent_rag or agent_mem) else 0.3,
+            sources=[{"path": d.get("metadata", {}).get("path", ""),
+                      "source_type": d.get("metadata", {}).get("source_type", "")}
+                     for d in agent_rag[:5]],
             memory_ids=[_rf(m, "memory_id", "") for m in agent_mem[:5]],
             created_at=now,
         ))
-
     return results
 
 
