@@ -1,6 +1,6 @@
 # ResearchAgent Example Outputs
 
-> 本文档展示 ResearchAgent v0.4 Preview 在 6 种任务类型（共 8 个示例）上的典型输出示例。
+> 本文档展示 ResearchAgent v0.5 Memory + Multi-Agent Preview 在 6 种任务类型（共 8 个示例）上的典型输出示例。
 >
 > 每个示例均基于项目实际功能（LangGraph 工作流、Agentic RAG、CSV/JSONL 工具调用、Evidence Checker、Report Writer / LLM-assisted Report Writer）生成。
 
@@ -627,7 +627,7 @@ ModuleNotFoundError: No module named langgraph 怎么解决
 这是代码辅助任务，后续会接入代码解释与修改工具。
 ```
 
-> **说明：** `code_help` 任务在当前 v0.4 Preview 版本中为占位节点。该任务的 `evidence_status` 固定为 `weak`，因为 code_node 不会调用 RAG 检索，也不会调用工具。后续版本计划接入代码解释与环境诊断能力。
+> **说明：** `code_help` 任务在当前 v0.5 Memory + Multi-Agent Preview 版本中为占位节点。该任务的 `evidence_status` 固定为 `weak`，因为 code_node 不会调用 RAG 检索，也不会调用工具。后续版本计划接入代码解释与环境诊断能力。
 
 ---
 
@@ -666,7 +666,7 @@ ModuleNotFoundError: No module named langgraph 怎么解决
 这是通用科研助手任务。
 ```
 
-> **说明：** `general` 任务在当前 v0.4 Preview 版本中为占位节点。与 `code_help` 类似，它的 `evidence_status` 为 `weak`。后续版本计划接入通用科研知识库或 LLM-based 自由回答能力。
+> **说明：** `general` 任务在当前 v0.5 Memory + Multi-Agent Preview 版本中为占位节点。与 `code_help` 类似，它的 `evidence_status` 为 `weak`。后续版本计划接入通用科研知识库或 LLM-based 自由回答能力。
 
 ---
 

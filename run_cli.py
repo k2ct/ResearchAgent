@@ -18,7 +18,7 @@ def run_agent(query: str) -> dict:
 
 
 def main():
-    print("ResearchAgent v0.4 Preview")
+    print("ResearchAgent v0.5 Memory + Multi-Agent Preview")
     print("输入 q / quit / exit 退出")
 
     while True:
@@ -119,8 +119,8 @@ def run_agent(query: str) -> dict:
 
 def print_welcome():
     print("=" * 60)
-    print("ResearchAgent v0.4 Preview")
-    print("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker + LLM-assisted Report Writer")
+    print("ResearchAgent v0.5 Memory + Multi-Agent Preview")
+    print("LangGraph + Agentic RAG + CSV/JSONL Tools + Evidence Checker + LLM-assisted Report Writer + Memory System + Multi-Agent")
     print("=" * 60)
     print("支持任务类型：")
     print("1. paper_question          论文问答 / 文献总结")
