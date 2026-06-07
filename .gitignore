@@ -145,3 +145,9 @@ desktop.ini
 .streamlit/*
 !.streamlit/
 !.streamlit/config.toml
+# Local generated research outputs
+data/ingested/
+data/paper_notes/
+data/progress_memory/
+reports/
+test_api.py
