@@ -1,6 +1,8 @@
 # ResearchAgent Demo Scenarios
 
-This document describes the six core demo scenarios of ResearchAgent, with expected behaviors verified in the Day21 integration test.
+> **版本：ResearchAgent v0.5 Memory + Multi-Agent Preview**
+
+This document describes the six core demo scenarios of ResearchAgent, with expected behaviors verified in the integration test suite.
 
 All scenarios are runnable via CLI (`python run_cli.py`) or Streamlit Web UI (`streamlit run app.py`).
 
@@ -234,7 +236,7 @@ ModuleNotFoundError: No module named langgraph 怎么解决
 
 ---
 
-## Agent Architecture Overview
+## Agent Architecture Overview (v0.5)
 
 All six scenarios flow through a common LangGraph pipeline:
 
@@ -251,15 +253,23 @@ User Input
     ├── Tool calling (csv_analyzer / jsonl_analyzer if path detected)
     │
     ▼
+[retrieve_memory] ──► memory_context (if ENABLE_MEMORY_AWARE_AGENT=true)
+    │
+    ▼
+[multi_agent_router] ──► orchestrator → handoff → executors → arbitration (if ENABLE_MULTI_AGENT=true)
+    │
+    ▼
 [evidence_check] ──► evidence_status (passed | weak)
     │
     ▼
-[final_answer] ──► answer + sources + debug info
+[final_answer] ──► answer + sources + memory_context + handoff_summary + debug info
 ```
 
 Key design decisions:
 - **Agentic RAG**: source_type filtering per task type (e.g., experiment_analysis → experiment_doc)
 - **Tool Router**: detects file paths in user input and dispatches the correct analyzer
+- **Memory Retrieval**: optional historical context injection from JSONL memory store
+- **Multi-Agent Orchestration**: optional 9-agent collaboration with handoff, arbitration, and tracing
 - **Evidence Checker**: rule-based check on RAG sources + tool results
 - **Report Writer**: pluggable — template fallback or LLM-assisted generation
 
